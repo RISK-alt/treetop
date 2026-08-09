@@ -12,6 +12,24 @@ if(NOT WIN32)
     message(FATAL_ERROR "treetop targets Windows only")
 endif()
 
+# docs/install.md and the README both promise Windows 10 build 1809
+# (RS5) or later, and the platform layer has relied on that floor since
+# Task 9 - but nothing ever told the compiler. Without _WIN32_WINNT and
+# NTDDI_VERSION pinned, each toolchain's headers fall back to their own
+# default, and the two defaults do not agree: MinGW-w64's headers expose
+# version-gated Windows API types permissively, while the Microsoft SDK
+# gates the same types strictly behind these macros and simply omits
+# them below the floor. MIB_TCP6TABLE_OWNER_PID (win_ports.c) is exactly
+# such a type - MinGW declared it, MSVC did not - and the fix is to set
+# the floor once, project-wide, before any Windows header in any
+# translation unit sees it, not to chase individual types as they turn
+# up. 0x0A00 / 0x0A000006 is Windows 10 1809, matching the documented
+# floor exactly.
+add_compile_definitions(
+    _WIN32_WINNT=0x0A00
+    NTDDI_VERSION=0x0A000006
+)
+
 if(MSVC)
     add_compile_options(/W4 /WX /D_CRT_SECURE_NO_WARNINGS /utf-8)
 else()
