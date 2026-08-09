@@ -25,3 +25,4 @@ compile_commands.json
 # Local planning notes and scratch, never published
 .plans/
 .superpowers/
+.claude/
