@@ -35,6 +35,8 @@ target_include_directories(treetop_core PUBLIC include)
 
 add_executable(treetop
     src/main.c
+    src/platform/ntapi.c
+    src/platform/win_system.c
 )
 target_link_libraries(treetop PRIVATE treetop_core iphlpapi psapi)
 
