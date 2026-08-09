@@ -25,6 +25,8 @@ add_library(treetop_core STATIC
     src/model/table.c
     src/model/delta.c
     src/model/tree.c
+    src/agent/rules.c
+    src/agent/detect.c
 )
 target_include_directories(treetop_core PUBLIC include)
 
@@ -41,6 +43,7 @@ add_executable(treetop_tests
     tests/test_table.c
     tests/test_delta.c
     tests/test_tree.c
+    tests/test_agent.c
 )
 target_include_directories(treetop_tests PRIVATE tests)
 target_link_libraries(treetop_tests PRIVATE treetop_core)
