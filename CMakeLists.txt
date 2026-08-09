@@ -42,6 +42,7 @@ add_executable(treetop
     src/platform/win_process.c
     src/platform/win_cmdline.c
     src/platform/win_ports.c
+    src/platform/win_console.c
 )
 target_link_libraries(treetop PRIVATE treetop_core iphlpapi psapi ws2_32)
 
