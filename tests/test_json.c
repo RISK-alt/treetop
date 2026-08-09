@@ -31,9 +31,19 @@ void    test_json(void)
     json_escape(NULL, buf, 256);
     TT_EQ_WSTR(buf, L"");
 
-    /* Truncation must never leave a trailing half-escape. */
-    json_escape(L"\\\\\\\\\\\\", buf, 5);
-    TT_CHECK(wcslen(buf) < 5);
+    /*
+    ** Truncation must never leave a trailing half-escape.
+    **
+    ** The input mixes widths on purpose. An all-backslash input cannot
+    ** discriminate: every escape is exactly 2 wide, so the output length
+    ** is always even and truncation lands on a boundary whatever the
+    ** implementation does - a naive per-character loop and an off-by-one
+    ** bound both pass it. Here "ab" fills 2 of the 3 usable slots, so the
+    ** backslash's 2-wide escape cannot fit and must be dropped whole.
+    ** A naive implementation emits "ab\" and fails.
+    */
+    json_escape(L"ab\\cd", buf, 4);
+    TT_EQ_WSTR(buf, L"ab");
 
     /* UTF-8 encoder: plain ASCII passes through as one byte each. */
     n = json_utf8_encode(L"Hi", utf8, sizeof(utf8));
