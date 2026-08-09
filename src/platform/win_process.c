@@ -21,7 +21,7 @@
 ** different guards; a local constant with the one value this file
 ** checks avoids that collision entirely.
 */
-# define TT_STATUS_INFO_LENGTH_MISMATCH  ((LONG)0xC0000004)
+#define TT_STATUS_INFO_LENGTH_MISMATCH  ((LONG)0xC0000004)
 
 /*
 ** Growth starts at 256 KB (comfortably above a quiet system's snapshot)
@@ -30,8 +30,8 @@
 ** whose process count keeps changing faster than we can catch up gives
 ** up after a bounded number of tries instead of growing without limit.
 */
-# define TT_QUERY_INITIAL_BYTES          (256 * 1024)
-# define TT_QUERY_MAX_RETRIES            8
+#define TT_QUERY_INITIAL_BYTES          (256 * 1024)
+#define TT_QUERY_MAX_RETRIES            8
 
 /*
 ** A second, independent bound on the entry walk below: even with a
@@ -40,7 +40,7 @@
 ** unbounded loop. Real systems today carry a few thousand processes at
 ** most; this is generously above that.
 */
-# define TT_WALK_MAX_ENTRIES             100000
+#define TT_WALK_MAX_ENTRIES             100000
 
 /*                                IMAGE NAME                                  */
 

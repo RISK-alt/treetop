@@ -23,7 +23,7 @@
 ** instead of retrying forever. Four tries is generous - it would take
 ** four consecutive listen()s landing in that exact window to exhaust it.
 */
-# define TT_PORTS_MAX_RETRIES  4
+#define TT_PORTS_MAX_RETRIES  4
 
 /*                                  CLEAR                                     */
 
@@ -133,8 +133,19 @@ static void walk_tcp4(t_table *tbl, const MIB_TCPTABLE_OWNER_PID *table,
 
     if (size < sizeof(MIB_TCPTABLE_OWNER_PID))
         return ;
-    n = (size - offsetof(MIB_TCPTABLE_OWNER_PID, table))
-        / sizeof(MIB_TCPROW_OWNER_PID);
+    /*
+    ** offsetof and sizeof are size_t (8 bytes on x64); the subtraction
+    ** and division below happen in size_t before landing in the 4-byte
+    ** DWORD n. Left implicit, MSVC's /W4 flags that narrowing as C4267
+    ** and /WX turns it into a hard error. win_process.c's enumerate_nt()
+    ** hit the same shape with NextEntryOffset arithmetic and narrows
+    ** explicitly for the same reason; size is itself a ULONG and a TCP
+    ** row is never zero bytes, so the quotient can never exceed what a
+    ** DWORD holds - the cast documents that bound instead of leaving the
+    ** compiler to guess it.
+    */
+    n = (DWORD)((size - offsetof(MIB_TCPTABLE_OWNER_PID, table))
+        / sizeof(MIB_TCPROW_OWNER_PID));
     if (table->dwNumEntries < n)
         n = table->dwNumEntries;
     i = 0;
@@ -155,8 +166,9 @@ static void walk_tcp6(t_table *tbl, const MIB_TCP6TABLE_OWNER_PID *table,
 
     if (size < sizeof(MIB_TCP6TABLE_OWNER_PID))
         return ;
-    n = (size - offsetof(MIB_TCP6TABLE_OWNER_PID, table))
-        / sizeof(MIB_TCP6ROW_OWNER_PID);
+    /* Same MSVC C4267 narrowing risk as walk_tcp4() above; see there. */
+    n = (DWORD)((size - offsetof(MIB_TCP6TABLE_OWNER_PID, table))
+        / sizeof(MIB_TCP6ROW_OWNER_PID));
     if (table->dwNumEntries < n)
         n = table->dwNumEntries;
     i = 0;
