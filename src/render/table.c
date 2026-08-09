@@ -129,7 +129,6 @@ static int  draw_command_cell(t_frame *f, const t_process *p, int avail,
     wchar_t         portpfx[16];
     wchar_t         tailbuf[48];
     wchar_t         corebuf[TT_CORE_BUF];
-    const wchar_t   *core_src;
     int             depth;
     int             tlen;
     int             plen;
@@ -212,8 +211,11 @@ static int  draw_command_cell(t_frame *f, const t_process *p, int avail,
         core_budget = 0;
     if (core_budget > TT_CORE_BUF - 1)
         core_budget = TT_CORE_BUF - 1;
-    core_src = (p->cmdline != NULL) ? p->cmdline : p->image;
-    fmt_shorten(core_src, (size_t)core_budget, corebuf, TT_CORE_BUF);
+    if (p->cmdline != NULL)
+        fmt_command(p->image, p->cmdline, (size_t)core_budget, corebuf,
+                    TT_CORE_BUF);
+    else
+        fmt_shorten(p->image, (size_t)core_budget, corebuf, TT_CORE_BUF);
     core_len = (int)wcslen(corebuf);
     if (!sel && p->is_agent_root)
     {

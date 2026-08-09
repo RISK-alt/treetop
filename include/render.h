@@ -12,6 +12,20 @@ void        fmt_bytes(unsigned long long bytes, wchar_t *out, size_t n);
 void        fmt_duration(unsigned long long secs, wchar_t *out, size_t n);
 void        fmt_shorten(const wchar_t *src, size_t max, wchar_t *out, size_t n);
 
+/*
+** COMMAND-column specific: image's stem (basename, ".exe" stripped) plus
+** whatever in cmdline follows argv[0], right-truncated with a trailing
+** ellipsis when it does not fit. Unlike fmt_shorten - correct for a bare
+** PATH, whose meaning lives in the tail - a command line is read left to
+** right with the identifying token (the program name) at the front, so
+** cutting the front off there erases exactly the part that says what a
+** row is. When cmdline carries no argument tail at all, the "command" IS
+** just a name/path and this defers to fmt_shorten's left-truncation
+** instead - at that point the tail genuinely is what identifies it.
+*/
+void        fmt_command(const wchar_t *image, const wchar_t *cmdline,
+                size_t max, wchar_t *out, size_t n);
+
 /*                                   JSON                                     */
 
 void        json_escape(const wchar_t *src, wchar_t *out, size_t n);

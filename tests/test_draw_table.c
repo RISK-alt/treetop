@@ -423,6 +423,90 @@ static void test_depth_indent_step(void)
 }
 
 /*
+** \u251c (a row with a FOLLOWING sibling) had no positive assertion
+** anywhere in the suite before this: test_width_exact_at_every_col's
+** fixture contains a real sibling pair but only measures width, and
+** test_depth_indent_step's rows are each trivially last (one per
+** depth). A row_is_last that always returned 1 would still pass every
+** other check in this file. Two depth-1 siblings, rendered in one call
+** so row_is_last's lookahead actually runs across real neighbours:
+** child_a (a following sibling exists) must show \u251c and NEVER
+** \u2514; child_b (nothing follows at its depth) the reverse.
+*/
+static void test_sibling_glyph_vs_last_glyph(void)
+{
+    t_process   child_a;
+    t_process   child_b;
+    t_process   *rows[2];
+    t_frame     f;
+    t_view      v;
+    wchar_t     *line;
+    wchar_t     *ctx;
+
+    child_a = mk_proc(100, 1000, 4, L"a.exe");
+    child_a.cmdline = L"a.exe first";
+    child_a.depth = 1;
+    child_b = mk_proc(200, 2000, 4, L"b.exe");
+    child_b.cmdline = L"b.exe second";
+    child_b.depth = 1;
+    rows[0] = &child_a;
+    rows[1] = &child_b;
+    view_init(&v);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table(&f, rows, 2, (size_t)-1, 0, 100, 2, &v);
+    f.buf[f.len] = L'\0';
+
+    line = wcstok(f.buf, L"\n", &ctx);
+    TT_CHECK(line != NULL);
+    if (line != NULL)
+    {
+        TT_CHECK(wcschr(line, L'\u251c') != NULL);
+        TT_CHECK(wcschr(line, L'\u2514') == NULL);
+    }
+
+    line = wcstok(NULL, L"\n", &ctx);
+    TT_CHECK(line != NULL);
+    if (line != NULL)
+    {
+        TT_CHECK(wcschr(line, L'\u2514') != NULL);
+        TT_CHECK(wcschr(line, L'\u251c') == NULL);
+    }
+    frame_free(&f);
+}
+
+/*
+** The gutter priority chain (orphan beats collapsible-arrow) is only
+** meaningful when a single row is both at once - untested until now, and
+** this project has repeatedly turned exactly that kind of untested
+** interaction into a regression. Orphan must win: '!' shown, neither
+** arrow glyph anywhere in the line.
+*/
+static void test_orphan_and_agent_root_combined(void)
+{
+    t_process   p;
+    t_process   *rows[1];
+    t_frame     f;
+    t_view      v;
+
+    p = mk_proc(100, 1000, 4, L"claude.exe");
+    p.cmdline = L"claude --dangerously-skip-permissions";
+    p.is_orphan = 1;
+    p.is_agent_root = 1;
+    p.collapsed = 0;
+    rows[0] = &p;
+    view_init(&v);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table(&f, rows, 1, (size_t)-1, 0, 100, 1, &v);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcschr(f.buf, L'!') != NULL);
+    TT_CHECK(wcschr(f.buf, L'\u25bc') == NULL);
+    TT_CHECK(wcschr(f.buf, L'\u25b6') == NULL);
+    frame_free(&f);
+}
+
+/*
 ** A NULL cmdline falls back to the image name plus a dim em-dash; a
 ** non-NULL cmdline never shows that dash at all. Both directions are
 ** checked so a regression that always (or never) appends the dash is
@@ -447,11 +531,15 @@ static void test_null_cmdline_fallback(void)
     TT_CHECK(wcschr(f.buf, L'\u2014') != NULL);
     frame_free(&f);
 
+    /* A non-NULL cmdline goes through fmt_command, not fmt_shorten: the
+       ".exe" is stripped from the identity token (fmt_command's own
+       suite covers the parsing in detail; this only needs to prove the
+       dash never appears when there IS a cmdline). */
     p.cmdline = L"chrome.exe --flag";
     TT_EQ_INT(frame_init(&f, 4096), 0);
     draw_table(&f, rows, 1, (size_t)-1, 0, 100, 1, &v);
     f.buf[f.len] = L'\0';
-    TT_CHECK(wcsstr(f.buf, L"chrome.exe --flag") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"chrome --flag") != NULL);
     TT_CHECK(wcschr(f.buf, L'\u2014') == NULL);
     frame_free(&f);
 }
@@ -507,9 +595,13 @@ static void test_scroll_window(void)
     t_frame     f;
     t_view      v;
 
-    a = mk_proc(100, 1000, 4, L"a.exe"); a.cmdline = L"aaa";
-    b = mk_proc(200, 2000, 4, L"b.exe"); b.cmdline = L"bbb";
-    c = mk_proc(300, 3000, 4, L"c.exe"); c.cmdline = L"ccc";
+    /* A bare single-token cmdline (no space) has no argument tail, so
+       fmt_command would fall back to the image stem and never show
+       "aaa"/"bbb"/"ccc" at all - each needs a real tail to survive as a
+       distinguishing marker here. */
+    a = mk_proc(100, 1000, 4, L"a.exe"); a.cmdline = L"a.exe aaa";
+    b = mk_proc(200, 2000, 4, L"b.exe"); b.cmdline = L"b.exe bbb";
+    c = mk_proc(300, 3000, 4, L"c.exe"); c.cmdline = L"c.exe ccc";
     rows[0] = &a;
     rows[1] = &b;
     rows[2] = &c;
@@ -598,6 +690,8 @@ void    test_draw_table(void)
     test_agent_root_accent();
     test_orphan_marker_no_column_shift();
     test_depth_indent_step();
+    test_sibling_glyph_vs_last_glyph();
+    test_orphan_and_agent_root_combined();
     test_null_cmdline_fallback();
     test_collapsed_agent_root_children_count();
     test_scroll_window();

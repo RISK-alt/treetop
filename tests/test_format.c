@@ -63,9 +63,73 @@ static void test_shorten(void)
     }
 }
 
+/*
+** fmt_command is the COMMAND-column-specific counterpart to fmt_shorten:
+** right-truncated (ellipsis trails) instead of left, because a command
+** line's identifying token sits at the front, not the tail. Each case
+** below is one of the five the review asked for by name.
+*/
+static void test_command(void)
+{
+    wchar_t buf[128];
+
+    /* A quoted argv[0] with a long path: image supplies the short name,
+       the quoting is consumed rather than needing hand-rolled parsing. */
+    fmt_command(L"find.exe",
+        L"\"C:\\Program Files\\Git\\usr\\bin\\find.exe\" / -iname winternl.h",
+        100, buf, 128);
+    TT_EQ_WSTR(buf, L"find / -iname winternl.h");
+
+    /* An unquoted argv[0]. */
+    fmt_command(L"node.exe", L"node server.js --port 3000", 100, buf, 128);
+    TT_EQ_WSTR(buf, L"node server.js --port 3000");
+
+    /* No argument tail at all: falls back to fmt_shorten on the bare
+       stem, which fits here and so is returned unchanged - "node.exe"
+       becomes "node", not the untouched original. */
+    fmt_command(L"node.exe", L"node.exe", 100, buf, 128);
+    TT_EQ_WSTR(buf, L"node");
+
+    /* A single long path-like token with no tail, narrow enough that
+       even the bare stem overflows: this is what actually reaches
+       fmt_shorten's OWN internal truncation, not just its pass-through
+       case - cross-checked against fmt_shorten directly so the exact
+       cut point is never hand-counted here. */
+    {
+        wchar_t expected[64];
+
+        fmt_shorten(L"verylongprocessnamehere", 10, expected, 64);
+        fmt_command(L"verylongprocessnamehere.exe",
+            L"\"C:\\some\\long\\nested\\path\\verylongprocessnamehere.exe\"",
+            10, buf, 128);
+        TT_EQ_WSTR(buf, expected);
+    }
+
+    /* Right-truncation landing mid-argument: "server.js" is cut to
+       "serv", not on a word boundary, proving this is a hard character
+       count and not some smarter word-aware truncation. */
+    fmt_command(L"node.exe", L"node server.js --port 3000", 10, buf, 128);
+    TT_EQ_WSTR(buf, L"node serv\u2026");
+    TT_EQ_INT((int)wcslen(buf), 10);
+
+    /* n bound respected even when max asks for more than the buffer can
+       hold - the same class of bug fmt_shorten itself was once fixed
+       for (commit cde8307). */
+    {
+        wchar_t guard[6];
+
+        guard[0] = L'?'; guard[1] = L'?'; guard[2] = L'?';
+        guard[3] = L'?'; guard[4] = L'?'; guard[5] = L'#';
+        fmt_command(L"node.exe", L"node server.js --port 3000", 40, guard, 5);
+        TT_EQ_INT((int)wcslen(guard) <= 4, 1);
+        TT_EQ_INT(guard[5], L'#');
+    }
+}
+
 void    test_format(void)
 {
     test_bytes();
     test_duration();
     test_shorten();
+    test_command();
 }
