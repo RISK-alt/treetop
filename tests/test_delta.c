@@ -55,14 +55,22 @@ void    test_delta(void)
     delta_apply(&cur, &prev);
     TT_EQ_DBL(cur.procs[0].cpu_pct, 100.0, 0.01);
 
-    /* Same PID, new creation time: a different process, so no match. */
+    /*
+    ** Same PID, new creation time: a different process, so no match.
+    **
+    ** cur's counter is deliberately HIGHER than prev's. If it were lower,
+    ** a key match that wrongly ignored create_time would still be caught
+    ** by the backwards-counter guard below and yield 0.0 anyway - the
+    ** test would pass while proving nothing. Rising counters isolate the
+    ** identity guard: a pid-only match reports 25 % here, not 0 %.
+    */
     table_clear(&prev);
     table_clear(&cur);
     p = mk_proc(102, 500, 4, L"node.exe");
-    p.user_time = 50 * SEC;
+    p.user_time = 10 * SEC;
     table_add(&prev, &p);
     p = mk_proc(102, 900, 4, L"node.exe");
-    p.user_time = 1 * SEC;
+    p.user_time = 11 * SEC;
     table_add(&cur, &p);
     delta_apply(&cur, &prev);
     TT_EQ_DBL(cur.procs[0].cpu_pct, 0.0, 0.001);
