@@ -80,3 +80,7 @@ t_process   *table_add(t_table *tbl, const t_process *src);
 t_process   *table_find(t_table *tbl, t_proc_key key);
 t_process   *table_find_pid(t_table *tbl, unsigned long pid);
 int         key_eq(t_proc_key a, t_proc_key b);
+
+/*                                  DELTAS                                    */
+
+void        delta_apply(t_table *cur, const t_table *prev);
