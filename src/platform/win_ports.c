@@ -3,8 +3,19 @@
 ** old winsock 1.1 declarations unless winsock2.h has already defined the
 ** guard that keeps it out, and ntohs() only exists in winsock2.h. ntapi.h
 ** below includes windows.h itself, so this ordering is what protects it.
+**
+** ws2tcpip.h must be included before iphlpapi.h too, for a different
+** reason: MIB_TCP6TABLE_OWNER_PID and MIB_TCP6ROW_OWNER_PID (used below
+** in walk_tcp6()) are declared by the real Windows SDK's iphlpapi.h
+** chain only when the IPv6 socket definitions ws2tcpip.h provides are
+** already visible - GetExtendedTcpTable's own documentation notes this
+** requirement for IPv6 use. iphlpapi.h does not include ws2tcpip.h
+** itself, so without this the type is simply absent rather than
+** declared incompletely. MinGW-w64's headers are laxer and expose it
+** either way, which is why this has only ever built there.
 */
 #include <winsock2.h>
+#include <ws2tcpip.h>
 
 #include "platform.h"
 #include "ntapi.h"
