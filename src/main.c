@@ -11,8 +11,7 @@
 ** No rendering, no key handling, no terminal setup yet - Tasks 15-19
 ** build those. This is the flat PID/CPU%/MEM/COMMAND dump that proves
 ** the sampling pipeline actually works end to end before anything gets
-** built on top of it. --json is Task 14's job, not this one's; the only
-** flag recognised here is --selftest.
+** built on top of it.
 */
 static int  run_flat(void)
 {
@@ -63,9 +62,37 @@ static int  run_flat(void)
     return (0);
 }
 
+/*
+** --json samples twice with the refresh interval in between, for the
+** same reason run_flat() does: cpu_pct is a delta between two samples,
+** so a single sample would report zero for every process and the whole
+** point of this flag - letting an agent see its own real footprint -
+** would be a lie.
+*/
+static int  run_json(void)
+{
+    t_app   a;
+
+    if (app_init(&a) != 0)
+    {
+        tt_warn("failed to initialise");
+        return (1);
+    }
+    if (a.limited)
+        tt_warn("running in limited mode (ntdll unavailable)");
+    app_sample(&a);
+    Sleep(a.refresh_ms);
+    app_sample(&a);
+    json_emit(&a.cur, &a.sys, stdout);
+    app_free(&a);
+    return (0);
+}
+
 int     main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--selftest") == 0)
         return (app_selftest());
+    if (argc > 1 && strcmp(argv[1], "--json") == 0)
+        return (run_json());
     return (run_flat());
 }

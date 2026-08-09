@@ -22,6 +22,7 @@ endif()
 add_library(treetop_core STATIC
     src/util/err.c
     src/render/format.c
+    src/render/json.c
     src/model/table.c
     src/model/delta.c
     src/model/tree.c
@@ -54,6 +55,7 @@ add_executable(treetop_tests
     tests/test_tree.c
     tests/test_agent.c
     tests/test_view.c
+    tests/test_json.c
 )
 target_include_directories(treetop_tests PRIVATE tests)
 target_link_libraries(treetop_tests PRIVATE treetop_core)

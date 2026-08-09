@@ -19,6 +19,7 @@ void    test_delta(void);
 void    test_tree(void);
 void    test_agent(void);
 void    test_view(void);
+void    test_json(void);
 
 static const t_suite    g_suites[] = {
     { "smoke", test_smoke },
@@ -28,6 +29,7 @@ static const t_suite    g_suites[] = {
     { "tree", test_tree },
     { "agent", test_agent },
     { "view", test_view },
+    { "json", test_json },
 };
 
 static const size_t     g_suite_count = sizeof(g_suites) / sizeof(g_suites[0]);
