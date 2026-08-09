@@ -52,6 +52,13 @@ static void test_classify(void)
     /* A nested claude inside a session must NOT open a second session. */
     p = mk_proc(300, 3000, 200, L"claude.exe"); table_add(&t, &p);
     p = mk_proc(400, 4000, 4, L"cursor.exe");   table_add(&t, &p);
+    /*
+    ** A process in no session at all. Without it every in_session
+    ** assertion in this test expects 1, and an implementation that
+    ** simply hardcoded in_session = 1 would pass the whole suite -
+    ** silently turning Task 8's agents-only view into a no-op.
+    */
+    p = mk_proc(500, 5000, 4, L"explorer.exe"); table_add(&t, &p);
     tree_build(&t);
     agent_classify(&t);
 
@@ -67,6 +74,12 @@ static void test_classify(void)
     TT_EQ_INT(t.procs[1].in_session, 1);
     TT_EQ_INT(t.procs[2].in_session, 1);
     TT_EQ_INT(t.procs[3].in_session, 1);
+
+    /* And the negative case, which is what makes the four above mean
+       something: explorer belongs to no session. */
+    TT_EQ_INT(t.procs[4].is_agent_root, 0);
+    TT_EQ_INT(t.procs[4].in_session, 0);
+    TT_CHECK(t.procs[4].agent_label == NULL);
     table_free(&t);
 }
 
