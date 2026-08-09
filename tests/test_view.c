@@ -391,6 +391,75 @@ static void test_roots_truncation(void)
     table_free(&t);
 }
 
+/*
+** flatten_flat zeroes p->depth on the shared t_process records so a flat
+** row never prints indented. Tree mode does not recompute depth - emit
+** trusted whatever tree_build last left there - so calling view_flatten
+** in flat mode and then in tree mode on the SAME table, with no
+** intervening tree_build, used to leave every depth at 0 and render the
+** whole tree unindented. This is exactly the pattern the event loop
+** uses: redraw on keypress reuses the current sample, and F5/F6 flip
+** view settings without resampling.
+*/
+static void test_depth_reasserted_after_flat_mode(void)
+{
+    t_table     t;
+    t_view      v;
+    t_process   p;
+    t_process   *rows[16];
+    size_t      n;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"root.exe");   table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"mid.exe");  table_add(&t, &p);
+    p = mk_proc(300, 3000, 200, L"leaf.exe"); table_add(&t, &p);
+    tree_build(&t);
+
+    view_init(&v);
+    v.tree_mode = 0;
+    view_flatten(&t, &v, rows, 16);       /* zeroes depth on every row */
+
+    view_init(&v);                        /* back to tree_mode = 1 */
+    n = view_flatten(&t, &v, rows, 16);   /* no tree_build in between */
+
+    TT_EQ_INT((int)n, 3);
+    TT_EQ_INT((int)rows[0]->key.pid, 100);
+    TT_EQ_INT(rows[0]->depth, 0);
+    TT_EQ_INT((int)rows[1]->key.pid, 200);
+    TT_EQ_INT(rows[1]->depth, 1);
+    TT_EQ_INT((int)rows[2]->key.pid, 300);
+    TT_EQ_INT(rows[2]->depth, 2);
+    table_free(&t);
+}
+
+/*
+** emit's own p->collapsed short-circuit, distinct from tree_flatten's:
+** view_flatten must stop descending at a collapsed node too, not merely
+** rely on the plain tree walk Task 5 already covers.
+*/
+static void test_collapsed_hides_descendants_in_view(void)
+{
+    t_table     t;
+    t_view      v;
+    t_process   p;
+    t_process   *rows[16];
+    size_t      n;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"claude.exe"); table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"node.exe"); table_add(&t, &p);
+    p = mk_proc(300, 3000, 200, L"rg.exe");   table_add(&t, &p);
+    tree_build(&t);
+    t.procs[0].collapsed = 1;
+
+    view_init(&v);
+    n = view_flatten(&t, &v, rows, 16);
+
+    TT_EQ_INT((int)n, 1);
+    TT_EQ_INT((int)rows[0]->key.pid, 100);
+    table_free(&t);
+}
+
 void    test_view(void)
 {
     test_filter_match();
@@ -406,4 +475,6 @@ void    test_view(void)
     test_sort_roots_in_tree();
     test_view_init_defaults();
     test_roots_truncation();
+    test_depth_reasserted_after_flat_mode();
+    test_collapsed_hides_descendants_in_view();
 }

@@ -102,6 +102,13 @@ static size_t   emit(t_process *p, const t_view *v, t_process **out,
         return (n);
     if (!subtree_matches(p, v, 0))
         return (n);
+    /*
+    ** Depth is reasserted here rather than trusted from tree_build,
+    ** because flatten_flat zeroes it on the shared table. Without this,
+    ** switching to flat mode and back within one sample renders the
+    ** whole tree unindented until the next refresh.
+    */
+    p->depth = guard;
     out[n++] = p;
     if (p->collapsed)
         return (n);
