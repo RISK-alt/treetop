@@ -21,7 +21,7 @@
 ** hostile or corrupted length, never a real one. Bounds the allocation
 ** in the primary path and the ReadProcessMemory in the PEB fallback.
 */
-# define TT_CMDLINE_MAX_BYTES  (128 * 1024)
+#define TT_CMDLINE_MAX_BYTES  (128 * 1024)
 
 /*                                  CACHE                                     */
 
