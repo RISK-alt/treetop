@@ -31,6 +31,7 @@ add_library(treetop_core STATIC
     src/agent/rules.c
     src/agent/detect.c
     src/input/filter.c
+    src/input/keys.c
     src/render/frame.c
     src/render/theme.c
     src/render/meters.c
@@ -65,6 +66,7 @@ add_executable(treetop_tests
     tests/test_frame.c
     tests/test_draw_table.c
     tests/test_chrome.c
+    tests/test_keys.c
 )
 target_include_directories(treetop_tests PRIVATE tests)
 target_link_libraries(treetop_tests PRIVATE treetop_core)
