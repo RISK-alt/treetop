@@ -9,7 +9,7 @@
 ** visible width, not raw buffer length - the colour codes it emits are
 ** zero-width on screen.
 */
-static size_t   visible_len(const wchar_t *s)
+size_t  visible_len(const wchar_t *s)
 {
     size_t  n;
 

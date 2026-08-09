@@ -3,6 +3,7 @@
 /*                                  INCLUDES                                  */
 
 # include "platform.h"
+# include "input.h"
 # include <stdio.h>
 
 /*                                 FORMATTING                                 */
@@ -44,3 +45,16 @@ void        frame_pad(t_frame *f, int n);
 /*                                   METERS                                   */
 
 void        draw_meters(t_frame *f, const t_sysinfo *sys, int cols);
+
+/*                                   TABLE                                    */
+
+/*
+** Draws rows[top .. top + rows_avail) - the caller owns scrolling and
+** picks top; this function only windows into the array it is given. sel
+** is a row index into the FULL rows array (not the visible window), so a
+** selection above or below the current window simply does not draw
+** inverted this frame, which is exactly what scrolling the window to
+** follow the selection relies on.
+*/
+void        draw_table(t_frame *f, t_process **rows, size_t n, size_t sel,
+                int top, int cols, int rows_avail, const t_view *v);

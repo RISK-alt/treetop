@@ -12,6 +12,14 @@ extern int  g_tt_fail;
 t_process   mk_proc(unsigned long pid, unsigned long long ct,
                     unsigned long ppid, const wchar_t *image);
 
+/*
+** Strips SGR escape sequences (\x1b[...m) and carriage returns, counting
+** only what would actually occupy a terminal cell. Shared by every suite
+** that measures a rendered line's width - defined once in test_frame.c so
+** no second, possibly-drifting copy of the stripping logic exists.
+*/
+size_t      visible_len(const wchar_t *s);
+
 # define TT_CHECK(cond)                                                       \
     do {                                                                      \
         g_tt_run++;                                                           \
