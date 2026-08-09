@@ -91,3 +91,4 @@ void        tree_build(t_table *tbl);
 size_t      tree_flatten(t_table *tbl, t_process **out, size_t max);
 void        tree_mark_orphans(t_table *tbl);
 int         is_dev_runtime(const wchar_t *image);
+int         is_system_image(const wchar_t *image);

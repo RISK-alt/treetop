@@ -164,6 +164,21 @@ static const wchar_t    *g_dev_runtimes[] = {
     NULL
 };
 
+/*
+** The boot and session chain Windows legitimately re-parents: smss exits
+** after handing off to wininit/winlogon, and the rest are core system
+** components that routinely end up parentless without any tool or agent
+** being involved. Flagging these as orphans would teach the user to
+** distrust the ORPHAN marker, which is worse than missing a real one.
+*/
+static const wchar_t    *g_system_images[] = {
+    L"system", L"registry", L"smss", L"csrss", L"wininit", L"winlogon",
+    L"services", L"lsass", L"svchost", L"fontdrvhost", L"dwm", L"spoolsv",
+    L"sihost", L"taskhostw", L"ctfmon", L"runtimebroker", L"searchindexer",
+    L"wudfhost", L"audiodg", L"conhost", L"dllhost", L"wmiprvse",
+    NULL
+};
+
 static int  wcs_ieq(const wchar_t *a, const wchar_t *b)
 {
     while (*a != L'\0' && *b != L'\0')
@@ -179,7 +194,11 @@ static int  wcs_ieq(const wchar_t *a, const wchar_t *b)
     return (*a == *b);
 }
 
-int     is_dev_runtime(const wchar_t *image)
+/*
+** Shared by is_dev_runtime and is_system_image: extract the extension-free
+** stem once, then check it against a NULL-terminated name list.
+*/
+static int  matches_stem_list(const wchar_t *image, const wchar_t *const *list)
 {
     wchar_t         stem[TT_IMAGE_LEN];
     const wchar_t   *dot;
@@ -194,10 +213,20 @@ int     is_dev_runtime(const wchar_t *image)
         len = TT_IMAGE_LEN - 1;
     wmemcpy(stem, image, len);
     stem[len] = L'\0';
-    for (i = 0; g_dev_runtimes[i] != NULL; i++)
-        if (wcs_ieq(stem, g_dev_runtimes[i]))
+    for (i = 0; list[i] != NULL; i++)
+        if (wcs_ieq(stem, list[i]))
             return (1);
     return (0);
+}
+
+int     is_dev_runtime(const wchar_t *image)
+{
+    return (matches_stem_list(image, g_dev_runtimes));
+}
+
+int     is_system_image(const wchar_t *image)
+{
+    return (matches_stem_list(image, g_system_images));
 }
 
 void    tree_mark_orphans(t_table *tbl)
@@ -210,6 +239,8 @@ void    tree_mark_orphans(t_table *tbl)
         p = &tbl->procs[i];
         p->is_orphan = 0;
         if (p->parent != NULL || p->ppid == 0)
+            continue;
+        if (is_system_image(p->image))
             continue;
         if (p->port_count > 0 || is_dev_runtime(p->image))
             p->is_orphan = 1;

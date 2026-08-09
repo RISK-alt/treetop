@@ -218,6 +218,22 @@ static void test_orphans(void)
        accident - it is specifically built to trip the other qualifiers. */
     p = mk_proc(6, 0, 0, L"node.exe");          table_add(&t, &p);
 
+    /* wininit.exe: parentless (smss exits after boot) and holding a
+       port. This is the regression - a core Windows component must
+       never be painted ORPHAN, no matter what it holds. */
+    p = mk_proc(7, 1000, 999, L"wininit.exe");
+    p.ports[0] = 49665; p.port_count = 1;       table_add(&t, &p);
+
+    /* A system image that is parentless with no port: still not an
+       orphan, so the exclusion is not accidentally riding on the
+       port check alone. */
+    p = mk_proc(8, 1000, 999, L"csrss.exe");    table_add(&t, &p);
+
+    /* node.exe, parentless, holding a port: still an orphan. Proves the
+       system-image exclusion did not swallow the real feature. */
+    p = mk_proc(9, 1000, 999, L"node.exe");
+    p.ports[0] = 12345; p.port_count = 1;       table_add(&t, &p);
+
     tree_build(&t);
 
     TT_EQ_INT(t.procs[0].is_orphan, 1);
@@ -226,6 +242,9 @@ static void test_orphans(void)
     TT_EQ_INT(t.procs[4].is_orphan, 0);
     TT_EQ_INT(t.procs[5].is_orphan, 0);
     TT_EQ_INT(t.procs[6].is_orphan, 0);
+    TT_EQ_INT(t.procs[7].is_orphan, 0);
+    TT_EQ_INT(t.procs[8].is_orphan, 0);
+    TT_EQ_INT(t.procs[9].is_orphan, 1);
     table_free(&t);
 }
 
@@ -241,6 +260,17 @@ static void test_dev_runtime_names(void)
     TT_EQ_INT(is_dev_runtime(L""), 0);
 }
 
+static void test_system_image_names(void)
+{
+    TT_EQ_INT(is_system_image(L"csrss.exe"), 1);
+    TT_EQ_INT(is_system_image(L"CSRSS.EXE"), 1);    /* case-insensitive */
+    TT_EQ_INT(is_system_image(L"csrss"), 1);        /* extension optional */
+    TT_EQ_INT(is_system_image(L"wininit.exe"), 1);
+    TT_EQ_INT(is_system_image(L"csrssx.exe"), 0);   /* near-miss, no match */
+    TT_EQ_INT(is_system_image(L"node.exe"), 0);
+    TT_EQ_INT(is_system_image(L""), 0);
+}
+
 void    test_tree(void)
 {
     test_links();
@@ -254,4 +284,5 @@ void    test_tree(void)
     test_ppid_zero_is_root();
     test_orphans();
     test_dev_runtime_names();
+    test_system_image_names();
 }
