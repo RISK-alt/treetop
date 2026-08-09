@@ -13,9 +13,11 @@ typedef struct s_suite
 }   t_suite;
 
 void    test_smoke(void);
+void    test_format(void);
 
 static const t_suite    g_suites[] = {
     { "smoke", test_smoke },
+    { "format", test_format },
 };
 
 static const size_t     g_suite_count = sizeof(g_suites) / sizeof(g_suites[0]);
