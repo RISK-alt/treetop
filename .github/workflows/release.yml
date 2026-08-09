@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: windows-latest
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v4
+
+      - name: Configure (MSVC, Release)
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Compute SHA256
+        shell: pwsh
+        run: |
+          $exe = "build\Release\treetop.exe"
+          $hash = (Get-FileHash -Path $exe -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "$exe.sha256" -Value "$hash  treetop.exe" -NoNewline -Encoding ascii
+          Add-Content -Path $env:GITHUB_ENV -Value "TREETOP_SHA256=$hash"
+
+      # The body repeats the SmartScreen explanation from docs/install.md
+      # rather than only linking to it, because the release page is exactly
+      # where someone downloading the exe for the first time will be
+      # standing when SmartScreen shows up.
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          $repoUrl = "${{ github.server_url }}/${{ github.repository }}"
+          $installUrl = "$repoUrl/blob/main/docs/install.md"
+          $notes = @"
+          Download ``treetop.exe`` below and run it - no installer, no runtime, one file.
+
+          Full instructions, including building from source and the required
+          terminal font, are in [the install guide]($installUrl).
+
+          **SHA256:** ``$env:TREETOP_SHA256``
+          (also attached below as ``treetop.exe.sha256``, in ``sha256sum`` format)
+
+          ## About the SmartScreen warning
+
+          The first time you run this executable, Windows will very likely show
+          "Windows protected your PC" - Microsoft Defender SmartScreen prevented
+          an unrecognized app from starting. That is expected for any unsigned
+          ``.exe`` downloaded from the internet; it is not specific to treetop,
+          and code-signing certificates cost real money for a project that costs
+          nothing to use. It is not, by itself, a reason to distrust the file,
+          but do not take that on faith either - compare the hash above against
+          what your own machine reports:
+
+          ``````powershell
+          Get-FileHash .\treetop.exe -Algorithm SHA256
+          ``````
+
+          If they match, click **More info** on the SmartScreen dialog, then
+          **Run anyway**. If they do not match, delete the file and download it
+          again from this Releases page rather than trusting the mismatched
+          copy. See [the install guide]($installUrl) for the full walkthrough.
+          "@
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $assets = @("build\Release\treetop.exe", "build\Release\treetop.exe.sha256")
+          gh release create "${{ github.ref_name }}" @assets `
+            --repo "${{ github.repository }}" `
+            --title "treetop ${{ github.ref_name }}" `
+            --notes-file release-notes.md
