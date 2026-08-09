@@ -51,7 +51,7 @@ ctest --test-dir build -C Release --output-on-failure
 .\build\treetop.exe --selftest
 ```
 
-The first command runs the portable test suite (1,810 assertions, no live
+The first command runs the portable test suite (1,800+ assertions, no live
 process table involved — the whole model and render layer is tested
 against hand-written snapshots). The second exercises the actual
 platform collectors — process enumeration, command lines, ports, system

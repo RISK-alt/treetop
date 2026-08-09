@@ -88,6 +88,33 @@ static void test_token_boundary(void)
     p = mk_proc(16, 1, 0, L"node.exe");
     p.cmdline = L"run-as-agent claude";
     TT_CHECK(agent_match(&p) != NULL);
+
+    /*
+    ** Regression: ',' was a right boundary but not a left one, so a
+    ** comma-separated token list with no surrounding spaces missed a
+    ** needle sitting right after a ','. False negative, the mirror image
+    ** of the amp-in-steampid false positive above. Both cmdlines below
+    ** contain no OTHER rule's needle ("first"/"last" match nothing), so
+    ** each is isolated to exactly this one boundary check - a match here
+    ** can only come from "claude" being recognised right after a comma,
+    ** not from some other rule matching incidentally.
+    */
+    /* Comma immediately to the left, end of string to the right. */
+    p = mk_proc(17, 1, 0, L"node.exe");
+    p.cmdline = L"node runner.js --list=first,claude";
+    TT_CHECK(agent_match(&p) != NULL);
+
+    /* Comma on both sides - the middle of a token list. */
+    p = mk_proc(18, 1, 0, L"node.exe");
+    p.cmdline = L"node runner.js --list=first,claude,last";
+    TT_CHECK(agent_match(&p) != NULL);
+
+    /* '(' and ')' are boundary characters on both sides too - an ordinary
+    ** Windows path component like "Program Files (x86)" must not need a
+    ** space to delimit a needle sitting right next to a parenthesis. */
+    p = mk_proc(19, 1, 0, L"node.exe");
+    p.cmdline = L"\"C:\\Program Files (x86)\\bin\\run.exe\" (claude)";
+    TT_CHECK(agent_match(&p) != NULL);
 }
 
 static void test_classify(void)
