@@ -3,6 +3,10 @@ project(treetop C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+# Without this, CMake compiles as -std=gnu11 on gcc, silently permitting
+# GNU extensions MSVC does not support. MSVC is not always available to
+# build with locally, so this must be enforced here, not caught by eye.
+set(CMAKE_C_EXTENSIONS OFF)
 
 if(NOT WIN32)
     message(FATAL_ERROR "treetop targets Windows only")
