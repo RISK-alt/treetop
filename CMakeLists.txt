@@ -35,6 +35,7 @@ target_include_directories(treetop_core PUBLIC include)
 
 add_executable(treetop
     src/main.c
+    src/app.c
     src/platform/ntapi.c
     src/platform/win_system.c
     src/platform/win_process.c
