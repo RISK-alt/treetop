@@ -190,9 +190,26 @@ static void walk_tcp6(t_table *tbl, const MIB_TCP6TABLE_OWNER_PID *table,
 ** IPv6 listener tables, deduplicated per process - a process listening
 ** on both stacks for the same port appears once.
 **
-** Returns 0 only if both reads succeeded, -1 if either failed - but
-** either way the table is left populated with whatever was read, per the
-** project convention that a partial result beats an empty one.
+** Code review finding: this used to return 0 only when BOTH families
+** read successfully (ok == 2), and src/app.c's --selftest gates its exit
+** code on that return value. IPv6 can be disabled outright on a machine
+** (DisabledComponents in the registry, common on locked-down corporate
+** images) with IPv4 working perfectly - GetExtendedTcpTable(AF_INET6)
+** then fails not because anything is actually broken, but because the
+** stack it is asking about does not exist. That turned a fully-working
+** IPv4-only machine into "listening ports ... FAIL" and a nonzero
+** --selftest exit code, contradicting docs/install.md's own "both should
+** exit 0" - a false alarm indistinguishable from a real one.
+**
+** One working family is enough for the tool to do its job (attribute the
+** ports that exist), so a partial read is no longer treated as a hard
+** failure: this returns 0 when both families came back, 1 when exactly
+** one did (partial - see platform.h), and -1 only when neither did. A
+** caller that only cares "did this basically work" (app_sample(), which
+** ignores the return value entirely and just uses whatever got filled in)
+** can keep treating anything >= 0 as fine; app_selftest() is the one
+** caller that distinguishes 0 from 1, so a machine with IPv6 disabled
+** reports the partial state in its detail string instead of failing.
 */
 int     plat_ports(t_table *tbl)
 {
@@ -222,5 +239,7 @@ int     plat_ports(t_table *tbl)
     }
     if (ok == 2)
         return (0);
+    if (ok == 1)
+        return (1);
     return (-1);
 }

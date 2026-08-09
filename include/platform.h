@@ -39,6 +39,18 @@ int                 plat_processes(t_table *tbl);
 */
 const wchar_t       *plat_cmdline(t_proc_key key);
 void                plat_cmdline_sweep(const t_table *tbl);
+
+/*
+** Attributes listening TCP ports from both the IPv4 and IPv6 tables.
+** Returns 0 when both families were read successfully, 1 when exactly
+** one was (partial - e.g. IPv6 disabled at the OS level, a real and not
+** uncommon configuration, not a bug), -1 only when neither came back.
+** The table is left populated with whatever was actually read in every
+** case, including -1: a partial or empty result is still better than
+** discarding what did succeed. Most callers only care whether this is
+** non-negative; app_selftest() is the one place that distinguishes 0
+** from 1, to report a partial read honestly without failing on it.
+*/
 int                 plat_ports(t_table *tbl);
 int                 plat_kill(t_proc_key key);
 void                plat_shutdown(void);

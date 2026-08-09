@@ -362,9 +362,14 @@ int     app_selftest(void)
             port_procs++;
         port_count += (size_t)cur.procs[i].port_count;
     }
-    snprintf(detail, sizeof(detail), "%zu ports on %zu processes",
-            port_count, port_procs);
-    st_line("listening ports", ports_rc == 0, detail);
+    if (ports_rc == 1)
+        snprintf(detail, sizeof(detail),
+                "%zu ports on %zu processes (partial - one of IPv4/IPv6"
+                " unavailable)", port_count, port_procs);
+    else
+        snprintf(detail, sizeof(detail), "%zu ports on %zu processes",
+                port_count, port_procs);
+    st_line("listening ports", ports_rc >= 0, detail);
     plat_system(&sys);
     cur.core_count = sys.core_count;
     cur.mem_total = sys.mem_total;
@@ -408,7 +413,7 @@ int     app_selftest(void)
     }
     st_line("agent sessions", 1, detail);
     failed = !(cur.count > 0 && sys.core_count > 0 && sys.mem_total > 0
-            && ports_rc == 0);
+            && ports_rc >= 0);
     table_free(&cur);
     plat_shutdown();
     return (failed ? 1 : 0);
