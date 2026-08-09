@@ -136,6 +136,57 @@ static void test_cycle_does_not_hang(void)
     table_free(&t);
 }
 
+static void test_flatten_respects_max(void)
+{
+    t_table     t;
+    t_process   p;
+    t_process   *rows[8];
+    size_t      n;
+    int         i;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"root.exe"); table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"a.exe");  table_add(&t, &p);
+    p = mk_proc(300, 3000, 200, L"b.exe");  table_add(&t, &p);
+    p = mk_proc(400, 4000, 300, L"c.exe");  table_add(&t, &p);
+    tree_build(&t);
+
+    /* Four nodes into a buffer of two: exactly two written, and the
+       slot past the limit must be left alone. */
+    for (i = 0; i < 8; i++)
+        rows[i] = NULL;
+    n = tree_flatten(&t, rows, 2);
+    TT_EQ_INT((int)n, 2);
+    TT_CHECK(rows[2] == NULL);
+
+    /* max == 0 writes nothing at all. */
+    rows[0] = NULL;
+    n = tree_flatten(&t, rows, 0);
+    TT_EQ_INT((int)n, 0);
+    TT_CHECK(rows[0] == NULL);
+
+    table_free(&t);
+}
+
+static void test_ppid_zero_is_root(void)
+{
+    t_table     t;
+    t_process   p;
+
+    table_init(&t, 8);
+    /* pid 0 must actually be present in the table, otherwise the lookup
+       fails on its own and the short-circuit is not what is under test.
+       It is older than the child, so without the ppid == 0 check the
+       child would be parented to System Idle Process. */
+    p = mk_proc(0, 0, 0, L"System Idle Process"); table_add(&t, &p);
+    p = mk_proc(500, 5000, 0, L"svchost.exe");    table_add(&t, &p);
+    tree_build(&t);
+
+    TT_CHECK(t.procs[1].parent == NULL);
+    TT_EQ_INT(t.procs[1].depth, 0);
+    table_free(&t);
+}
+
 void    test_tree(void)
 {
     test_links();
@@ -145,4 +196,6 @@ void    test_tree(void)
     test_subtree_aggregates();
     test_collapsed_hides_descendants();
     test_cycle_does_not_hang();
+    test_flatten_respects_max();
+    test_ppid_zero_is_root();
 }
