@@ -2,7 +2,154 @@
 #include "harness.h"
 #include "render.h"
 
+#include <math.h>
 #include <string.h>
+
+/*
+** Reads back everything written to a tmpfile() so far, NUL-terminated -
+** same convention tests/test_cli.c already uses for cli_print_help()/
+** cli_print_version(), reused here so json_emit() can be checked against
+** its real output without hijacking the process's own stdout.
+*/
+static void read_back(FILE *fp, char *buf, size_t n)
+{
+    size_t  got;
+
+    rewind(fp);
+    got = fread(buf, 1, n - 1, fp);
+    buf[got] = '\0';
+}
+
+/*
+** json_emit() (src/render/json.c) is the one public entry point of the
+** --json flag - README.md calls this shape "a stable interface from the
+** first tagged release on" - and had no test of its own anywhere: only
+** its two building blocks, json_escape() and json_utf8_encode(), were
+** covered above. Exercises a synthetic table built by hand (no tree_build
+** needed - json_emit reads is_agent_root/is_orphan/subtree_* directly off
+** each row, it does not walk parent/child links) covering every section
+** and the edge cases most likely to silently corrupt the contract: a NULL
+** cmdline, a backslash-heavy one, and a non-finite cpu_pct.
+*/
+static void test_json_emit_shape_and_edge_cases(void)
+{
+    t_table     tbl;
+    t_sysinfo   sys;
+    t_process   p;
+    FILE        *fp;
+    char        buf[8192];
+    char        *v_version;
+    char        *v_system;
+    char        *v_sessions;
+    char        *v_orphans;
+    char        *v_processes;
+
+    TT_EQ_INT(table_init(&tbl, 8), 0);
+    memset(&sys, 0, sizeof(sys));
+    sys.core_count = 8;
+    sys.cpu_pct = 45.5;
+    sys.mem_total = 34000000000ULL;
+    sys.mem_used = 12000000000ULL;
+
+    /* An agent session root: drives the "sessions" array. */
+    p = mk_proc(100, 1000, 4, L"claude.exe");
+    p.is_agent_root = 1;
+    p.agent_label = L"Claude Code";
+    p.subtree_cpu = 12.5;
+    p.subtree_mem = 1000000;
+    p.subtree_count = 3;
+    TT_CHECK(table_add(&tbl, &p) != NULL);
+
+    /* An orphan with a listening port and a non-finite cpu_pct - the
+       "finite_or_zero" guard must turn NAN into 0.0, never emit "nan"
+       (which is not valid JSON and would break every consumer's parser). */
+    p = mk_proc(200, 2000, 999, L"node.exe");
+    p.is_orphan = 1;
+    p.cmdline = L"node server.js";
+    p.port_count = 1;
+    p.ports[0] = 3000;
+    p.working_set = 500000;
+    p.cpu_pct = NAN;
+    TT_CHECK(table_add(&tbl, &p) != NULL);
+
+    /* A NULL cmdline (protected process) must serialise as JSON null,
+       never the literal text "(null)" and never a crash. */
+    p = mk_proc(300, 3000, 4, L"System.exe");
+    p.cmdline = NULL;
+    TT_CHECK(table_add(&tbl, &p) != NULL);
+
+    /* A backslash-heavy Windows command line must escape every backslash
+       - the single most common character JSON needs escaped in any real
+       command line this tool ever shows. */
+    p = mk_proc(400, 4000, 4, L"a.exe");
+    p.cmdline = L"C:\\Users\\test\\a.exe --flag \"C:\\Program Files\\x\"";
+    TT_CHECK(table_add(&tbl, &p) != NULL);
+
+    fp = tmpfile();
+    TT_CHECK(fp != NULL);
+    if (fp == NULL)
+    {
+        table_free(&tbl);
+        return ;
+    }
+    json_emit(&tbl, &sys, fp);
+    read_back(fp, buf, sizeof(buf));
+    fclose(fp);
+    table_free(&tbl);
+
+    /* Every top-level key is present, and in the documented order. */
+    v_version = strstr(buf, "\"version\":");
+    v_system = strstr(buf, "\"system\":");
+    v_sessions = strstr(buf, "\"sessions\":");
+    v_orphans = strstr(buf, "\"orphans\":");
+    v_processes = strstr(buf, "\"processes\":");
+    TT_CHECK(v_version != NULL);
+    TT_CHECK(v_system != NULL);
+    TT_CHECK(v_sessions != NULL);
+    TT_CHECK(v_orphans != NULL);
+    TT_CHECK(v_processes != NULL);
+    if (v_version && v_system && v_sessions && v_orphans && v_processes)
+    {
+        TT_CHECK(v_version < v_system);
+        TT_CHECK(v_system < v_sessions);
+        TT_CHECK(v_sessions < v_orphans);
+        TT_CHECK(v_orphans < v_processes);
+    }
+    TT_CHECK(strstr(buf, "\"cores\": 8") != NULL);
+
+    /* The session entry sits inside "sessions", ahead of "orphans". */
+    if (v_sessions != NULL && v_orphans != NULL)
+    {
+        char    *session_pid;
+
+        session_pid = strstr(v_sessions, "\"pid\": 100");
+        TT_CHECK(session_pid != NULL && session_pid < v_orphans);
+        TT_CHECK(strstr(v_sessions, "Claude Code") != NULL);
+    }
+
+    /* The orphan entry: ports array, and NAN guarded to a plain 0.0. */
+    if (v_orphans != NULL && v_processes != NULL)
+    {
+        char    *orphan_pid;
+
+        orphan_pid = strstr(v_orphans, "\"pid\": 200");
+        TT_CHECK(orphan_pid != NULL && orphan_pid < v_processes);
+        TT_CHECK(strstr(v_orphans, "\"ports\": [3000]") != NULL);
+        TT_CHECK(strstr(v_orphans, "\"cpu_pct\": 0.0") != NULL);
+        TT_CHECK(strstr(v_orphans, "nan") == NULL);
+        TT_CHECK(strstr(v_orphans, "NAN") == NULL);
+    }
+
+    /* NULL cmdline -> JSON null, never the four characters "(null)". */
+    TT_CHECK(strstr(buf, "\"pid\": 300, \"ppid\": 4, \"image\": \"System.exe\", "
+            "\"cmdline\": null") != NULL);
+    TT_CHECK(strstr(buf, "(null)") == NULL);
+
+    /* Backslash-heavy cmdline escapes every backslash. */
+    TT_CHECK(strstr(buf,
+            "C:\\\\Users\\\\test\\\\a.exe --flag \\\"C:\\\\Program Files"
+            "\\\\x\\\"") != NULL);
+}
 
 void    test_json(void)
 {
@@ -138,4 +285,6 @@ void    test_json(void)
         TT_EQ_INT(n, 0);
         TT_CHECK(small[0] == '\0');
     }
+
+    test_json_emit_shape_and_edge_cases();
 }
