@@ -117,6 +117,56 @@ typedef struct _TT_SYSTEM_PROCESS_INFORMATION
     IO_COUNTERS     IoCounters;
 }   TT_SYSTEM_PROCESS_INFORMATION, *TT_PSYSTEM_PROCESS_INFORMATION;
 
+/*
+** PROCESS_BASIC_INFORMATION is, unlike SYSTEM_PROCESS_INFORMATION above,
+** publicly documented by Microsoft with these exact field names - but
+** since MSVC is not available in this environment to diff against, it
+** gets the same TT_-prefixed treatment as the block above rather than an
+** unverified claim of agreement under the _WINTERNL_ guard. Field layout
+** checked against the installed MinGW-w64 winternl.h
+** (x86_64-w64-mingw32/include/winternl.h), which declares it with these
+** same six members.
+*/
+typedef struct _TT_PROCESS_BASIC_INFORMATION
+{
+    LONG            ExitStatus;
+    PVOID           PebBaseAddress;
+    ULONG_PTR       AffinityMask;
+    TT_KPRIORITY    BasePriority;
+    ULONG_PTR       UniqueProcessId;
+    ULONG_PTR       InheritedFromUniqueProcessId;
+}   TT_PROCESS_BASIC_INFORMATION;
+
+/*                         PEB LAYOUT (X64 ONLY)                              */
+
+/*
+** win_cmdline.c's PEB fallback walks PEB -> ProcessParameters ->
+** CommandLine by raw byte offset rather than through PEB and
+** RTL_USER_PROCESS_PARAMETERS struct declarations. Both types carry
+** hundreds of bytes this codebase never otherwise touches (PEB) or would
+** need exact Reserved-array sizing trusted purely from memory
+** (RTL_USER_PROCESS_PARAMETERS); a struct that is only ever used to
+** compute two field offsets is more risk than the two offsets
+** themselves.
+**
+** These two values are long-stable (unchanged since Vista) and are
+** derived here from - and checked against - the installed MinGW-w64
+** winternl.h's PEB and RTL_USER_PROCESS_PARAMETERS declarations:
+**   PEB:                          BYTE[2] + BYTE + BYTE[1] + PVOID[2]
+**                                 (padded to 8) + Ldr(8) -> Process-
+**                                 Parameters at offset 0x20.
+**   RTL_USER_PROCESS_PARAMETERS:  BYTE[16] + PVOID[10] (80 bytes) +
+**                                 ImagePathName (UNICODE_STRING, 16
+**                                 bytes on x64) -> CommandLine at
+**                                 offset 0x70.
+** x86_64-w64-mingw32/include/winternl.h, checked directly, confirms both
+** field orderings. treetop is 64-bit only, so no 32-bit variant exists
+** here - a WOW64 target must be detected and refused instead, which is
+** win_cmdline.c's job, not this file's.
+*/
+# define TT_PEB_PROCESS_PARAMETERS_OFFSET       0x020
+# define TT_RTL_USER_PROCESS_PARAMS_CMDLINE_OFFSET  0x070
+
 /*                              ENTRY POINTS                                  */
 
 int     ntapi_init(void);

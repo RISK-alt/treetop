@@ -38,6 +38,7 @@ add_executable(treetop
     src/platform/ntapi.c
     src/platform/win_system.c
     src/platform/win_process.c
+    src/platform/win_cmdline.c
 )
 target_link_libraries(treetop PRIVATE treetop_core iphlpapi psapi)
 

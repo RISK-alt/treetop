@@ -29,15 +29,12 @@ int     plat_limited(void)
     return (g_limited);
 }
 
-void    plat_shutdown(void)
-{
-    /*
-    ** Nothing persistent is opened by this task's collectors: ntdll is
-    ** resolved but never freed (it outlives the process anyway), and
-    ** plat_system only touches stack buffers and file statics. Kept as
-    ** a hook for later tasks that do acquire real resources.
-    */
-}
+/*
+** plat_shutdown() is defined in win_cmdline.c, not here: it is the first
+** collector that acquires a real persistent resource (the command-line
+** cache's heap allocations). This file's own collectors touch only
+** stack buffers and file statics, so they have nothing to release.
+*/
 
 /*                                  CLOCK                                     */
 
