@@ -234,23 +234,37 @@ static void test_core_strip_width(void)
 /*
 ** A full-load, full-core-count frame is the worst case for overflowing a
 ** narrow terminal: every gauge bar is entirely filled and the core strip
-** (when present) draws one glyph per core. At 120/100/80 columns no
-** rendered line may exceed its declared width once colour escapes -
-** which occupy zero terminal cells - are stripped out.
+** (when present) draws one glyph per core. No rendered line may exceed
+** its declared width once colour escapes - which occupy zero terminal
+** cells - are stripped out.
+**
+** 120/100/80 alone only exercise draw_gauge's full "<label>[<bar>]
+** <value>" layout, where the bar simply absorbs whatever room is left.
+** The interesting failure region is narrower than that: 40 and 20 still
+** fit the full layout for these value lengths, but 10, 5, 1 and 0 force
+** draw_gauge's value-then-label-then-nothing degradation (see the
+** comment on draw_gauge) - a regression there would overflow exactly at
+** these widths, not at 80+.
 */
 static void test_meters_bounded(void)
 {
     t_frame     f;
     t_sysinfo   sys;
-    int         cols[3];
+    int         cols[9];
     int         i;
 
     sys = mk_sys(128, 100.0);
     cols[0] = 120;
     cols[1] = 100;
     cols[2] = 80;
+    cols[3] = 40;
+    cols[4] = 20;
+    cols[5] = 10;
+    cols[6] = 5;
+    cols[7] = 1;
+    cols[8] = 0;
     i = 0;
-    while (i < 3)
+    while (i < 9)
     {
         TT_EQ_INT(frame_init(&f, 256), 0);
         draw_meters(&f, &sys, cols[i]);

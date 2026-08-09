@@ -20,32 +20,59 @@
 /*                                  CPU GAUGE                                 */
 
 /*
-** Renders one "<label>[<bar>] <value>" gauge line, bounded to exactly
-** `cols` visible columns: overhead (label field, brackets, the space
-** before value, and the value text itself) is subtracted from cols
-** first, and whatever remains becomes the bar width, so the two can
-** never add up to more than cols.
+** Renders one gauge line, never more than `cols` visible columns wide -
+** though below a certain width it draws less than the full
+** "<label>[<bar>] <value>" layout. Three fixed degradation steps, each
+** gated on the exact byte budget the dropped layout needs:
+**
+**   1. Full layout, if "<label>[" + bar + "] <value>" fits (>= 7+vlen).
+**   2. Drop the value first - the bar already shows roughly the same
+**      information, so the value is the most redundant part - if
+**      "<label>[" + bar + "]" still fits (>= 6).
+**   3. Drop the label too - CPU is always drawn before MEM, so screen
+**      position still identifies which gauge is which - if "[" + bar +
+**      "]" fits (>= 2).
+**   4. Below that, draw nothing at all rather than emit a truncated
+**      bracket or a bar clipped mid-glyph.
+**
+** Each step's threshold is the exact width that step needs with an
+** empty (zero-width) bar, so whichever step is chosen always fits
+** within cols with room left over for the bar - no combination of
+** label, value length and terminal width can push the composed line
+** past cols.
 */
 static void draw_gauge(t_frame *f, const wchar_t *label, double pct,
                         const wchar_t *value, int cols)
 {
-    int             overhead;
+    int             vlen;
     int             bar_w;
     int             filled;
     int             i;
+    int             show_label;
+    int             show_value;
     double          clamped;
     const wchar_t   *color;
 
+    if (cols < 2)
+        return ;
     clamped = pct;
     if (clamped < 0.0)
         clamped = 0.0;
     if (clamped > 100.0)
         clamped = 100.0;
-    overhead = 4 + 3 + (int)wcslen(value);
-    bar_w = cols - overhead;
-    if (bar_w < 0)
-        bar_w = 0;
-    frame_printf(f, L"%-4ls[", label);
+    vlen = (int)wcslen(value);
+    show_value = (cols >= 7 + vlen);
+    show_label = (cols >= 6);
+    if (show_value)
+        bar_w = cols - 7 - vlen;
+    else if (show_label)
+        bar_w = cols - 6;
+    else
+        bar_w = cols - 2;
+    if (show_label)
+        frame_printf(f, L"%-4ls[", label);
+    else
+        frame_puts(f, L"[");
     filled = (int)(clamped / 100.0 * (double)bar_w + 0.5);
     if (filled > bar_w)
         filled = bar_w;
@@ -64,7 +91,9 @@ static void draw_gauge(t_frame *f, const wchar_t *label, double pct,
     }
     if (color[0] != L'\0')
         frame_puts(f, TT_RESET);
-    frame_printf(f, L"] %ls", value);
+    frame_puts(f, L"]");
+    if (show_value)
+        frame_printf(f, L" %ls", value);
 }
 
 /*                                 CORE STRIP                                 */
