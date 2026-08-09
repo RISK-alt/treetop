@@ -7,6 +7,25 @@ static wchar_t  lower(wchar_t c)
     return ((c >= L'A' && c <= L'Z') ? (wchar_t)(c + 32) : c);
 }
 
+/*
+** Rule needles are short words ("amp", "goose", "codex", ...) and a bare
+** substring search matches them inside unrelated longer words - "amp"
+** inside "-steampid=", "goose" inside "mongoose". Require a delimiter (or
+** the string edge) on both sides of the match so a rule fires only on a
+** whole token, not a fragment of one.
+*/
+static int  is_left_boundary(wchar_t c)
+{
+    return (c == L' ' || c == L'\\' || c == L'/' || c == L'"'
+            || c == L'\'' || c == L'=' || c == L':');
+}
+
+static int  is_right_boundary(wchar_t c)
+{
+    return (c == L' ' || c == L'\\' || c == L'/' || c == L'"'
+            || c == L'\'' || c == L'.' || c == L'-' || c == L',');
+}
+
 static int  contains_ci(const wchar_t *hay, const wchar_t *needle)
 {
     size_t  i;
@@ -19,7 +38,9 @@ static int  contains_ci(const wchar_t *hay, const wchar_t *needle)
         for (j = 0; needle[j] != L'\0'; j++)
             if (lower(hay[i + j]) != lower(needle[j]))
                 break;
-        if (needle[j] == L'\0')
+        if (needle[j] == L'\0'
+            && (i == 0 || is_left_boundary(hay[i - 1]))
+            && (hay[i + j] == L'\0' || is_right_boundary(hay[i + j])))
             return (1);
     }
     return (0);

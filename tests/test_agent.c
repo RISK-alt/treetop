@@ -41,6 +41,55 @@ static void test_match(void)
     TT_CHECK(agent_match(&p) == NULL);
 }
 
+/*
+** Rule matching must be token-delimited, not bare substring: a rule like
+** "amp" must not fire on a process whose command line merely happens to
+** contain those letters embedded in a longer word (steampid=, mongoose).
+** Confirmed live: steamwebhelper.exe's cmdline contains "-steampid=" and
+** was reported as an Amp agent session before this fix.
+*/
+static void test_token_boundary(void)
+{
+    t_process   p;
+
+    /* The exact regression: "amp" inside "-steampid=" must not match. */
+    p = mk_proc(10, 1, 0, L"steamwebhelper.exe");
+    p.cmdline = L"\"C:\\Program Files (x86)\\Steam\\steamwebhelper.exe\" "
+                L"-nocrashdialog \"-steampid=1234\"";
+    TT_CHECK(agent_match(&p) == NULL);
+
+    /* "goose" embedded inside "mongoose" must not match. */
+    p = mk_proc(11, 1, 0, L"mongoose.exe");
+    p.cmdline = L"mongoose.exe --config db.conf";
+    TT_CHECK(agent_match(&p) == NULL);
+
+    /* Plain image match still works: needle at start, followed by '.'. */
+    p = mk_proc(12, 1, 0, L"claude.exe");
+    TT_CHECK(agent_match(&p) != NULL);
+
+    /* Full quoted path: needle preceded by '\\', followed by '.', inside
+       quotes at both ends of the haystack. */
+    p = mk_proc(13, 1, 0, L"node.exe");
+    p.cmdline = L"\"C:\\Users\\x\\.local\\bin\\claude.exe\"";
+    TT_CHECK(agent_match(&p) != NULL);
+
+    /* Path-component case MATCH_CMDLINE exists for: needle preceded and
+       followed by a path separator, not at either end of the haystack. */
+    p = mk_proc(14, 1, 0, L"node.exe");
+    p.cmdline = L"node C:\\Users\\x\\AppData\\npm\\claude\\cli.js";
+    TT_CHECK(agent_match(&p) != NULL);
+
+    /* Match at the very start of the haystack. */
+    p = mk_proc(15, 1, 0, L"node.exe");
+    p.cmdline = L"claude --version";
+    TT_CHECK(agent_match(&p) != NULL);
+
+    /* Match at the very end of the haystack. */
+    p = mk_proc(16, 1, 0, L"node.exe");
+    p.cmdline = L"run-as-agent claude";
+    TT_CHECK(agent_match(&p) != NULL);
+}
+
 static void test_classify(void)
 {
     t_table     t;
@@ -86,5 +135,6 @@ static void test_classify(void)
 void    test_agent(void)
 {
     test_match();
+    test_token_boundary();
     test_classify();
 }
