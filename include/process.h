@@ -84,3 +84,8 @@ int         key_eq(t_proc_key a, t_proc_key b);
 /*                                  DELTAS                                    */
 
 void        delta_apply(t_table *cur, const t_table *prev);
+
+/*                                   TREE                                     */
+
+void        tree_build(t_table *tbl);
+size_t      tree_flatten(t_table *tbl, t_process **out, size_t max);
