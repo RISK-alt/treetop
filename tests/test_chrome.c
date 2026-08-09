@@ -83,7 +83,7 @@ static void test_header_width_exact_at_every_col(void)
         while (j < 2)
         {
             TT_EQ_INT(frame_init(&f, 4096), 0);
-            draw_header(&f, &a, widths[i], limited_vals[j]);
+            draw_header(&f, &a, widths[i], limited_vals[j], a.cur.count);
             f.buf[f.len] = L'\0';
             for_each_line(f.buf, check_width_exact_cb, &widths[i]);
             frame_free(&f);
@@ -109,7 +109,7 @@ static void test_header_limited_marker_and_count(void)
     a.cur.count = 7;
 
     TT_EQ_INT(frame_init(&f, 4096), 0);
-    draw_header(&f, &a, 120, 1);
+    draw_header(&f, &a, 120, 1, a.cur.count);
     f.buf[f.len] = L'\0';
     TT_CHECK(wcsstr(f.buf, L"limited mode") != NULL);
     TT_CHECK(wcsstr(f.buf, L"treetop") != NULL);
@@ -117,10 +117,40 @@ static void test_header_limited_marker_and_count(void)
     frame_free(&f);
 
     TT_EQ_INT(frame_init(&f, 4096), 0);
-    draw_header(&f, &a, 120, 0);
+    draw_header(&f, &a, 120, 0, a.cur.count);
     f.buf[f.len] = L'\0';
     TT_CHECK(wcsstr(f.buf, L"limited mode") == NULL);
     TT_CHECK(wcsstr(f.buf, L"treetop") != NULL);
+    frame_free(&f);
+}
+
+/*
+** When the view is narrowed (visible_count != a->cur.count - a text
+** filter here, but the same logic covers agents-only/orphans-only) the
+** header shows "N / M procs" instead of the bare total: a header
+** claiming the full count while the table shows a fraction of it is the
+** exact inconsistency this decision closes. Checked both directions so a
+** stub that always shows the ratio (or never does) is caught either way.
+*/
+static void test_header_shows_ratio_when_narrowed(void)
+{
+    t_app   a;
+    t_frame f;
+
+    mk_app(&a);
+    a.cur.count = 300;
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_header(&f, &a, 120, 0, 12);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"12 / 300 procs") != NULL);
+    frame_free(&f);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_header(&f, &a, 120, 0, 300);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"300 procs") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"/") == NULL);
     frame_free(&f);
 }
 
@@ -458,10 +488,294 @@ static void test_render_all_first_line_width(void)
     table_free(&a.prev);
 }
 
+/*
+** render_all must never emit more than `rows` lines, even when `rows` is
+** too small to fit header + meters + footer's combined 1+3+1 floor (at
+** cols >= 100). This is the concrete case the review named: rows=3,
+** cols=120 used to produce 1+3+0+1 = 5 lines against a 3-row budget,
+** because table_rows alone was clamped to 0 while header/meters/footer
+** were still drawn unconditionally. The priority order documented above
+** render_all (footer, then header, then meters, then table) means at
+** rows=3 here meters is the one dropped: footer(1) + header(1) +
+** table(1) = 3 exactly, with real row data available so that 1 is a
+** genuine table row, not just an empty budget nobody used.
+*/
+static void test_render_all_rows_never_exceed_budget(void)
+{
+    t_app       a;
+    t_process   p;
+    t_frame     f;
+    int         rows_vals[6] = { 5, 4, 3, 2, 1, 0 };
+    int         i;
+    int         lines;
+
+    mk_app(&a);
+    TT_EQ_INT(table_init(&a.cur, 8), 0);
+    TT_EQ_INT(table_init(&a.prev, 8), 0);
+    view_init(&a.view);
+    i = 0;
+    while (i < 5)
+    {
+        p = mk_proc((unsigned long)(100 + i), 1000 + (unsigned long long)i,
+                4, L"a.exe");
+        p.cmdline = L"a.exe --flag";
+        table_add(&a.cur, &p);
+        i++;
+    }
+    tree_build(&a.cur);
+    a.sys.core_count = 2;
+    a.sys.mem_total = 1024;
+    a.sys.mem_used = 512;
+
+    i = 0;
+    while (i < 6)
+    {
+        TT_EQ_INT(frame_init(&f, 4096), 0);
+        render_all(&f, &a, 120, rows_vals[i], 0);
+        f.buf[f.len] = L'\0';
+        lines = (int)count_lines(f.buf);
+        TT_CHECK(lines <= rows_vals[i]);
+        frame_free(&f);
+        i++;
+    }
+
+    /* Exact counts where the outcome is fully determined. */
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    render_all(&f, &a, 120, 0, 0);
+    f.buf[f.len] = L'\0';
+    TT_EQ_INT((int)count_lines(f.buf), 0);
+    frame_free(&f);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    render_all(&f, &a, 120, 1, 0);
+    f.buf[f.len] = L'\0';
+    TT_EQ_INT((int)count_lines(f.buf), 1);
+    TT_CHECK(wcsstr(f.buf, L"quit") != NULL);
+    frame_free(&f);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    render_all(&f, &a, 120, 3, 0);
+    f.buf[f.len] = L'\0';
+    TT_EQ_INT((int)count_lines(f.buf), 3);
+    TT_CHECK(wcsstr(f.buf, L"CPU") == NULL);
+    frame_free(&f);
+
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
+/*                          RENDER_ALL SELECTION/SCROLL                       */
+
+/*
+** Shared fixture for the four scroll/centering tests below: 20 processes
+** in flat, PID-ascending order (deterministic, no tree sort surprises),
+** each carrying a unique "--tagNNN" marker in its command line so a test
+** can look up exactly one row by substring. cmdbufs is caller-owned and
+** must outlive every render_all() call the caller makes, since table_add
+** copies t_process by value - including the raw cmdline pointer, not the
+** string - so the backing storage has to stay alive as long as a->cur
+** does.
+*/
+static void build_selection_fixture(t_app *a, wchar_t cmdbufs[20][32])
+{
+    t_process   p;
+    int         i;
+
+    mk_app(a);
+    TT_EQ_INT(table_init(&a->cur, 32), 0);
+    TT_EQ_INT(table_init(&a->prev, 32), 0);
+    view_init(&a->view);
+    a->view.tree_mode = 0;
+    a->view.sort = SORT_PID;
+    a->view.sort_desc = 0;
+    i = 0;
+    while (i < 20)
+    {
+        p = mk_proc((unsigned long)(100 + i), 1000 + (unsigned long long)i,
+                4, L"proc.exe");
+        swprintf(cmdbufs[i], 32, L"proc.exe --tag%d", 100 + i);
+        p.cmdline = cmdbufs[i];
+        table_add(&a->cur, &p);
+        i++;
+    }
+    tree_build(&a->cur);
+    a->sys.core_count = 1;
+    a->sys.mem_total = 1024;
+    a->sys.mem_used = 512;
+}
+
+/*
+** Finds the '\r\n'-delimited line containing `needle` and reports
+** whether TT_INVERT appears before that line ends: 1 (found, inverted -
+** this is the selected row), 0 (found, not inverted - visible but not
+** selected) or -1 (not found at all - scrolled out of the window
+** entirely, not merely un-highlighted). That three-way split is what
+** lets a single helper prove both "this row is selected" and "this row
+** was scrolled off screen", which a plain wcsstr presence check cannot
+** tell apart from "present but not the selected one".
+*/
+static int  line_invert_state(const wchar_t *buf, const wchar_t *needle)
+{
+    const wchar_t   *hit;
+    const wchar_t   *start;
+    const wchar_t   *nl;
+    const wchar_t   *inv;
+
+    hit = wcsstr(buf, needle);
+    if (hit == NULL)
+        return (-1);
+    start = hit;
+    while (start > buf && start[-1] != L'\n')
+        start--;
+    nl = wcschr(start, L'\n');
+    if (nl == NULL)
+        nl = start + wcslen(start);
+    inv = wcsstr(start, TT_INVERT);
+    return (inv != NULL && inv < nl);
+}
+
+/*
+** cols=120 (meter_lines=3) and rows=13 -> footer(1) + header(1) +
+** meters(3) + table(8) = 13 exactly, a known, deterministic 8-row
+** window against 20 total rows.
+*/
+#define TT_SEL_TEST_COLS   120
+#define TT_SEL_TEST_ROWS   13
+
+/*
+** Selecting the very first row must not scroll at all: centering would
+** ask for top = 0 - window/2, which is negative and clamps to 0, leaving
+** the window exactly [0, window). Proven by checking the selected row is
+** inverted, the last row of that window is present-but-plain, and a row
+** just past the window is entirely absent (scrolled out), not merely
+** un-highlighted.
+*/
+static void test_render_all_selection_no_scroll_near_top(void)
+{
+    t_app       a;
+    t_frame     f;
+    wchar_t     cmdbufs[20][32];
+
+    build_selection_fixture(&a, cmdbufs);
+    a.selected.pid = 100;
+    a.selected.create_time = 1000;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, TT_SEL_TEST_COLS, TT_SEL_TEST_ROWS, 0);
+    f.buf[f.len] = L'\0';
+
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag100"), 1);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag107"), 0);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag108"), -1);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag119"), -1);
+
+    frame_free(&f);
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
+/*
+** Selecting a row well clear of both ends must centre the window on it:
+** top = sel - window/2 = 10 - 4 = 6, so the visible window is [6, 14),
+** i.e. tag106..tag113 inclusive, with tag105 and tag114 - one row on
+** either side of the window - both entirely absent.
+*/
+static void test_render_all_selection_centers_in_middle(void)
+{
+    t_app       a;
+    t_frame     f;
+    wchar_t     cmdbufs[20][32];
+
+    build_selection_fixture(&a, cmdbufs);
+    a.selected.pid = 110;
+    a.selected.create_time = 1010;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, TT_SEL_TEST_COLS, TT_SEL_TEST_ROWS, 0);
+    f.buf[f.len] = L'\0';
+
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag110"), 1);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag106"), 0);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag113"), 0);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag105"), -1);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag114"), -1);
+
+    frame_free(&f);
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
+/*
+** Selecting the very last row must not leave a half-empty page: a naive
+** unclamped centre (top = 19 - 4 = 15) would only have 5 rows left
+** (indices 15..19) to show against an 8-row window. The actual clamp
+** (top = nrows - window = 20 - 8 = 12) keeps the window full - proven
+** both by an exact line-count check (header+meters+footer+8 table rows
+** == 13, the full budget, not fewer) and by checking the window starts
+** exactly at tag112, not tag111 or tag115.
+*/
+static void test_render_all_selection_clamped_full_last_page(void)
+{
+    t_app       a;
+    t_frame     f;
+
+    wchar_t     cmdbufs[20][32];
+
+    build_selection_fixture(&a, cmdbufs);
+    a.selected.pid = 119;
+    a.selected.create_time = 1019;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, TT_SEL_TEST_COLS, TT_SEL_TEST_ROWS, 0);
+    f.buf[f.len] = L'\0';
+
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag119"), 1);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag112"), 0);
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag111"), -1);
+    TT_EQ_INT((int)count_lines(f.buf), TT_SEL_TEST_ROWS);
+
+    frame_free(&f);
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
+/*
+** A selected key that matches no row currently in the table (the
+** process it named has since exited) must behave exactly like "nothing
+** selected": no crash, no wild scroll (top stays 0, same window as the
+** near-top case), and critically no row anywhere is inverted - proving
+** sel really did fall back to the (size_t)-1 sentinel rather than
+** matching some unrelated row by accident (e.g. a stray zero-initialised
+** comparison).
+*/
+static void test_render_all_selection_absent_key_no_crash(void)
+{
+    t_app       a;
+    t_frame     f;
+    wchar_t     cmdbufs[20][32];
+
+    build_selection_fixture(&a, cmdbufs);
+    a.selected.pid = 999999;
+    a.selected.create_time = 999999;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, TT_SEL_TEST_COLS, TT_SEL_TEST_ROWS, 0);
+    f.buf[f.len] = L'\0';
+
+    TT_EQ_INT(line_invert_state(f.buf, L"--tag100"), 0);
+    TT_CHECK(wcsstr(f.buf, TT_INVERT) == NULL);
+    TT_EQ_INT((int)count_lines(f.buf), TT_SEL_TEST_ROWS);
+
+    frame_free(&f);
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
 void    test_chrome(void)
 {
     test_header_width_exact_at_every_col();
     test_header_limited_marker_and_count();
+    test_header_shows_ratio_when_narrowed();
     test_footer_width_exact_at_every_col();
     test_footer_filter_vs_keybar();
     test_help_width_exact_at_every_col();
@@ -471,4 +785,9 @@ void    test_chrome(void)
     test_help_refuses_below_minimum();
     test_render_all_order_and_line_budget();
     test_render_all_first_line_width();
+    test_render_all_rows_never_exceed_budget();
+    test_render_all_selection_no_scroll_near_top();
+    test_render_all_selection_centers_in_middle();
+    test_render_all_selection_clamped_full_last_page();
+    test_render_all_selection_absent_key_no_crash();
 }

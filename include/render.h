@@ -92,8 +92,18 @@ void        draw_table(t_frame *f, t_process **rows, size_t n, size_t sel,
 ** a->limited is the trustworthy field to read, the same way it is never
 ** the one that calls plat_limited() directly. The caller in src/main.c
 ** (Task 19) is the only place that owns that decision.
+**
+** draw_header's `visible_count` is the row count AFTER the current view
+** (text filter, agents-only, orphans-only) is applied - i.e. exactly
+** what draw_table is about to show. render_all computes this once (it
+** already has to run view_flatten() for the table) and passes it in,
+** rather than draw_header re-deriving it, so there is exactly one
+** view_flatten() call per frame. When it differs from a->cur.count the
+** header shows "N / M procs" instead of the bare total, so a narrowed
+** view is never silently claiming to show more than it does.
 */
-void        draw_header(t_frame *f, const t_app *a, int cols, int limited);
+void        draw_header(t_frame *f, const t_app *a, int cols, int limited,
+                size_t visible_count);
 void        draw_footer(t_frame *f, const t_app *a, int cols);
 void        draw_help(t_frame *f, int cols, int rows);
 void        render_all(t_frame *f, t_app *a, int cols, int rows,

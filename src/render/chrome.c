@@ -45,11 +45,21 @@
 ** entire point of this marker (see the brief): it should survive
 ** truncation on a modestly narrow terminal even though the brief lists
 ** it last among the four things the header shows.
+**
+** The process count reads "N / M procs" whenever visible_count differs
+** from a->cur.count - not only under a text filter, but under
+** agents-only or orphans-only too, since all three narrow what
+** draw_table actually shows the same way. A bare "M procs" while the
+** table displays a fraction of that is exactly the kind of small
+** inconsistency the brief's own review called out; matching on "does the
+** displayed count differ from the total" catches every way the view can
+** narrow it, not just the one named in the example.
 */
-void    draw_header(t_frame *f, const t_app *a, int cols, int limited)
+void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
+                    size_t visible_count)
 {
     wchar_t         clockbuf[16];
-    wchar_t         procsbuf[40];
+    wchar_t         procsbuf[48];
     time_t          now;
     struct tm       *tmv;
     int             avail;
@@ -73,7 +83,13 @@ void    draw_header(t_frame *f, const t_app *a, int cols, int limited)
             avail -= len;
         }
     }
-    swprintf(procsbuf, 40, L"  %llu procs", (unsigned long long)a->cur.count);
+    if (visible_count != a->cur.count)
+        swprintf(procsbuf, 48, L"  %llu / %llu procs",
+                (unsigned long long)visible_count,
+                (unsigned long long)a->cur.count);
+    else
+        swprintf(procsbuf, 48, L"  %llu procs",
+                (unsigned long long)a->cur.count);
     len = (int)wcslen(procsbuf);
     if (avail >= len)
     {
@@ -456,19 +472,50 @@ void    draw_help(t_frame *f, int cols, int rows)
 ** (see the brief - deliberate, not dirty-region tracking), then composes
 ** header, meters, table and footer in that fixed order.
 **
+** `rows` is a hard ceiling, not a hint: header, meters and footer used to
+** be drawn unconditionally before the table's own budget was clamped to
+** zero, which meant a `rows` too small to fit all three still got all
+** three - the exact defect class Task 16's gauge shipped with (a comment
+** asserting a bound the code did not actually enforce). draw_help proves
+** the right shape for this: box_h is clamped to `rows` BEFORE any content
+** arithmetic runs, so nothing downstream can push the total past it. This
+** function now does the equivalent - it decides which sections survive a
+** short `rows` BEFORE drawing any of them, by spending a `budget` in
+** priority order:
+**
+**   1. footer (1 line) - carries 'q', the one binding nothing else on
+**      screen hints at (the same reasoning draw_footer's own key-bar
+**      ordering already uses for its content). Kept unless `rows` is 0.
+**   2. header (1 line) - identifies what is on screen and carries the
+**      limited-mode marker. Second most protected.
+**   3. meters (2 or 3 lines, cols-dependent) - load figures, real but the
+**      most dispensable of the four sections; dropped whole rather than
+**      partially (draw_meters has no notion of "draw fewer lines").
+**   4. table - whatever budget is left, always, per the brief's own "the
+**      table simply gets fewer rows". Can be (and often is) 0.
+**
+** Each section is included only if the FULL amount it needs still fits
+** the remaining budget, so the running total of lines actually emitted
+** can never exceed `rows`: every reservation below is subtracted from
+** `budget` before the next one is attempted, and `table_rows` is
+** whatever is left over, never negative.
+**
 ** There is no persisted scroll offset anywhere in t_app - Task 17's
 ** draw_table takes `top` from its caller, and nothing between here and
 ** there owns remembering it frame to frame. This function therefore
 ** recomputes a scroll window fresh every call: it flattens the current
-** table through the live view, locates a->selected by key (a->selected
-** is a (pid, create_time) key precisely so it survives table_add()
-** reallocs and row reordering - see app.h), and centres the visible
-** window on that row when it is found. sel is left as (size_t)-1 - "no
-** row selected", the same sentinel test_draw_table.c already uses - when
-** a->selected matches nothing in the current frame, which is also the
-** state a freshly zero-initialised t_app starts in; Task 19 is
-** responsible for pointing a->selected at a real row before the first
-** frame the user should see something highlighted in.
+** table through the live view FIRST (both to know `nrows` - needed for
+** the header's "N / M procs" - and to locate a->selected by key;
+** a->selected is a (pid, create_time) key precisely so it survives
+** table_add() reallocs and row reordering - see app.h), and centres the
+** visible window on that row when it is found, then clamps so a
+** near-the-end selection still fills the last page fully rather than
+** leaving it half-empty. sel is left as (size_t)-1 - "no row selected",
+** the same sentinel test_draw_table.c already uses - when a->selected
+** matches nothing in the current frame (including the state a freshly
+** zero-initialised t_app starts in, or a selected process that has since
+** exited); Task 19 is responsible for pointing a->selected at a real row
+** before the first frame the user should see something highlighted in.
 */
 void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
 {
@@ -476,18 +523,16 @@ void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
     size_t      nrows;
     size_t      sel;
     size_t      i;
+    int         show_footer;
+    int         show_header;
+    int         show_meters;
     int         meter_lines;
+    int         budget;
     int         table_rows;
     int         top;
 
     frame_reset(f);
     frame_puts(f, L"\x1b[H\x1b[2J");
-    draw_header(f, a, cols, limited);
-    draw_meters(f, &a->sys, cols);
-    meter_lines = (cols >= 100) ? 3 : 2;
-    table_rows = rows - 1 - meter_lines - 1;
-    if (table_rows < 0)
-        table_rows = 0;
     rowbuf = NULL;
     nrows = 0;
     if (a->cur.count > 0)
@@ -507,6 +552,24 @@ void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
         }
         i++;
     }
+    budget = rows;
+    if (budget < 0)
+        budget = 0;
+    show_footer = (budget >= 1);
+    if (show_footer)
+        budget -= 1;
+    show_header = (budget >= 1);
+    if (show_header)
+        budget -= 1;
+    meter_lines = (cols >= 100) ? 3 : 2;
+    show_meters = (budget >= meter_lines);
+    if (show_meters)
+        budget -= meter_lines;
+    table_rows = budget;
+    if (show_header)
+        draw_header(f, a, cols, limited, nrows);
+    if (show_meters)
+        draw_meters(f, &a->sys, cols);
     top = 0;
     if (sel != (size_t)-1 && table_rows > 0)
     {
@@ -522,5 +585,6 @@ void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
     }
     draw_table(f, rowbuf, nrows, sel, top, cols, table_rows, &a->view);
     free(rowbuf);
-    draw_footer(f, a, cols);
+    if (show_footer)
+        draw_footer(f, a, cols);
 }
