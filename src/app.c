@@ -13,7 +13,8 @@
 **   3. plat_system(&sys); copy core_count/mem_total into cur
 **   4. plat_processes(cur) - every table_add() finishes here
 **   5. plat_cmdline() per process
-**   6. plat_ports(cur), on its own 3 s wall-clock timer
+**   6. plat_ports(cur) on its own 3 s wall-clock timer, else carry the
+**      previous tick's ports/port_count forward from prev by key
 **   7. delta_apply(cur, prev or NULL on the first tick)
 **   8. tree_build(cur) - also marks orphans
 **   9. agent_classify(cur)
@@ -24,6 +25,13 @@
 ** before it returns. Nothing in this file takes such a pointer before
 ** plat_processes() is done - step 5 re-derives each process's address
 ** from cur.procs[i] by index, never from a pointer captured earlier.
+**
+** Step 6's carry-forward has to happen there, not folded into step 10:
+** tree_mark_orphans(), called from inside step 8, reads port_count to
+** decide is_orphan, so port state must be settled before step 8 runs.
+** Only app_sample() has cur and prev in hand at the same time, which is
+** exactly why this carry cannot be done anywhere else - no later task,
+** and no collector, ever sees both tables at once.
 */
 
 /*
@@ -124,6 +132,33 @@ void    app_sample(t_app *a)
     {
         plat_ports(&a->cur);
         a->last_port_ms = a->cur.sample_time;
+    }
+    else
+    {
+        /*
+        ** The timer did not fire this tick, so plat_ports() was not
+        ** called and every row here still has the port_count == 0 that
+        ** plat_processes() (step 4) left it at. Left alone, that reads
+        ** as "stopped listening" to everything downstream - the ports
+        ** column would blank on two ticks out of three, and a
+        ** port-only orphan (tree_mark_orphans() below tests
+        ** port_count > 0) would flip is_orphan on and off every tick,
+        ** which is exactly the flapping that heuristic exists to avoid.
+        ** Carrying the last known port state forward by key - the same
+        ** shape as the collapsed-state carry in step 10 below - fixes
+        ** both. A process absent from prev (it did not exist last tick)
+        ** is simply left with no ports until the next real refresh,
+        ** which is correct: there is nothing to carry forward for it.
+        */
+        for (i = 0; i < a->cur.count; i++)
+        {
+            old = table_find(&a->prev, a->cur.procs[i].key);
+            if (old == NULL)
+                continue;
+            a->cur.procs[i].port_count = old->port_count;
+            memcpy(a->cur.procs[i].ports, old->ports,
+                    sizeof(a->cur.procs[i].ports));
+        }
     }
 
     /* 7 */
