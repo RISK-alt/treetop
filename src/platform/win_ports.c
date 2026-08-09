@@ -151,7 +151,17 @@ static void walk_tcp4(t_table *tbl, const MIB_TCPTABLE_OWNER_PID *table,
     i = 0;
     while (i < n)
     {
-        port = ntohs((u_short)table->table[i].dwLocalPort);
+        /*
+        ** ntohs() takes a u_short, but u_short is not reliably visible
+        ** as a type here under the MSVC SDK headers - which of winsock2.h's
+        ** own typedefs it exposes in this translation unit is not
+        ** guaranteed, and losing it makes MSVC fall back to implicit int
+        ** (C4431), which /WX turns into a hard error. unsigned short is
+        ** the same type under every Windows toolchain and needs no SDK
+        ** typedef to be visible, so it is used here instead - do not
+        ** "simplify" this back to u_short.
+        */
+        port = ntohs((unsigned short)table->table[i].dwLocalPort);
         attribute_port(tbl, table->table[i].dwOwningPid, port);
         i++;
     }
@@ -174,7 +184,8 @@ static void walk_tcp6(t_table *tbl, const MIB_TCP6TABLE_OWNER_PID *table,
     i = 0;
     while (i < n)
     {
-        port = ntohs((u_short)table->table[i].dwLocalPort);
+        /* Same u_short-visibility reasoning as walk_tcp4() above. */
+        port = ntohs((unsigned short)table->table[i].dwLocalPort);
         attribute_port(tbl, table->table[i].dwOwningPid, port);
         i++;
     }
