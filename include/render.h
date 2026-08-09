@@ -4,6 +4,7 @@
 
 # include "platform.h"
 # include "input.h"
+# include "app.h"
 # include <stdio.h>
 
 /*                                 FORMATTING                                 */
@@ -72,3 +73,28 @@ void        draw_meters(t_frame *f, const t_sysinfo *sys, int cols);
 */
 void        draw_table(t_frame *f, t_process **rows, size_t n, size_t sel,
                 int top, int cols, int rows_avail, const t_view *v);
+
+/*                                   CHROME                                   */
+
+/*
+** draw_header/draw_footer/draw_help/render_all all live in
+** src/render/chrome.c, which is Win32-free and built into treetop_core
+** for exactly the reason format.c, frame.c, meters.c and table.c
+** already are: the test binary must be able to exercise a rendered
+** frame without a live console.
+**
+** t_app already carries a `limited` field, set once by app_init() from
+** plat_limited(). draw_header/render_all still take `limited` as an
+** explicit parameter rather than reading a->limited themselves, because
+** plat_limited() (and, by extension, "is this app instance degraded")
+** is platform state - this file may read whatever a caller hands it in
+** a plain struct, but it must never be the one place that decides
+** a->limited is the trustworthy field to read, the same way it is never
+** the one that calls plat_limited() directly. The caller in src/main.c
+** (Task 19) is the only place that owns that decision.
+*/
+void        draw_header(t_frame *f, const t_app *a, int cols, int limited);
+void        draw_footer(t_frame *f, const t_app *a, int cols);
+void        draw_help(t_frame *f, int cols, int rows);
+void        render_all(t_frame *f, t_app *a, int cols, int rows,
+                int limited);

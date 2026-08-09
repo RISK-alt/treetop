@@ -22,6 +22,7 @@ void    test_view(void);
 void    test_json(void);
 void    test_frame(void);
 void    test_draw_table(void);
+void    test_chrome(void);
 
 static const t_suite    g_suites[] = {
     { "smoke", test_smoke },
@@ -34,6 +35,7 @@ static const t_suite    g_suites[] = {
     { "json", test_json },
     { "frame", test_frame },
     { "draw_table", test_draw_table },
+    { "chrome", test_chrome },
 };
 
 static const size_t     g_suite_count = sizeof(g_suites) / sizeof(g_suites[0]);

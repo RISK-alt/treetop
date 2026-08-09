@@ -35,6 +35,7 @@ add_library(treetop_core STATIC
     src/render/theme.c
     src/render/meters.c
     src/render/table.c
+    src/render/chrome.c
 )
 target_include_directories(treetop_core PUBLIC include)
 
@@ -63,6 +64,7 @@ add_executable(treetop_tests
     tests/test_json.c
     tests/test_frame.c
     tests/test_draw_table.c
+    tests/test_chrome.c
 )
 target_include_directories(treetop_tests PRIVATE tests)
 target_link_libraries(treetop_tests PRIVATE treetop_core)

@@ -4,10 +4,20 @@
 #include "theme.h"
 
 /*
-** Strips SGR escape sequences (\x1b[...m) to count only what would
-** actually occupy a terminal cell. draw_meters' cols bound is about
-** visible width, not raw buffer length - the colour codes it emits are
-** zero-width on screen.
+** Strips CSI escape sequences (ESC '[' ... final-byte) to count only
+** what would actually occupy a terminal cell. Originally this only
+** recognised the 'm'-terminated SGR sequences (colour codes) Tasks 16
+** and 17 emit - correct for them, but Task 18's render_all() opens every
+** frame with "\x1b[H\x1b[2J" (cursor-home + erase-display), whose final
+** bytes are 'H' and 'J', not 'm'. Under the old 'm'-only rule this
+** parsed as "one giant unterminated escape" that swallowed everything up
+** to the next literal 'm' it happened to find anywhere later in the
+** buffer (a colour code, if any, or the end of the string) - silently
+** undercounting the width of any line that carried a non-SGR escape.
+** ECMA-48 defines a CSI sequence's final byte as anything in 0x40-0x7E,
+** which covers 'H' and 'J' along with 'm' and everything else a real
+** terminal parser recognises the same way; stopping at the first byte in
+** that range is the general, correct rule, not a colour-specific one.
 */
 size_t  visible_len(const wchar_t *s)
 {
@@ -19,9 +29,9 @@ size_t  visible_len(const wchar_t *s)
         if (*s == L'\x1b' && s[1] == L'[')
         {
             s += 2;
-            while (*s != L'\0' && *s != L'm')
+            while (*s != L'\0' && (*s < 0x40 || *s > 0x7e))
                 s++;
-            if (*s == L'm')
+            if (*s != L'\0')
                 s++;
         }
         else if (*s == L'\r')
