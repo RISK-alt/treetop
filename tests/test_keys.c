@@ -487,6 +487,43 @@ static void test_f9_is_not_implemented_yet(void)
     table_free(&a.cur);
 }
 
+/*                       ESCAPE OUTSIDE FILTER MODE                           */
+
+/*
+** TT_KEY_ESCAPE outside filter_mode is not in the brief's bindings
+** table verbatim - every other Escape test here runs WITH filter_mode
+** active - but clear_filter() (src/input/keys.c) applies it there too,
+** as a plausible reading of "clear filter and exit filter mode" as a
+** general Esc binding: it lets a filter kept via Enter be cleared
+** without re-entering filter mode first. Code review flagged that this
+** path existed but was never exercised by a test; these two make it
+** deliberate and falsifiable rather than incidental.
+*/
+static void test_escape_outside_filter_mode_clears_kept_filter(void)
+{
+    t_app   a;
+
+    mk_flat3(&a);
+    wcscpy(a.view.filter, L"node");     /* e.g. kept from an earlier Enter */
+    a.filter_mode = 0;
+    TT_EQ_INT(keys_handle(&a, TT_KEY_ESCAPE), 1);
+    TT_EQ_WSTR(a.view.filter, L"");
+    TT_EQ_INT(a.filter_mode, 0);
+    table_free(&a.cur);
+}
+
+static void test_escape_outside_filter_mode_with_empty_filter_is_noop(void)
+{
+    t_app   a;
+
+    mk_flat3(&a);
+    TT_EQ_INT(a.view.filter[0], L'\0');
+    TT_EQ_INT(a.filter_mode, 0);
+    TT_EQ_INT(keys_handle(&a, TT_KEY_ESCAPE), 0);
+    TT_EQ_WSTR(a.view.filter, L"");
+    table_free(&a.cur);
+}
+
 /*                               FILTER MODE                                  */
 
 static void test_slash_enters_filter_mode(void)
@@ -692,6 +729,9 @@ void    test_keys(void)
 
     test_unknown_key_is_noop();
     test_f9_is_not_implemented_yet();
+
+    test_escape_outside_filter_mode_clears_kept_filter();
+    test_escape_outside_filter_mode_with_empty_filter_is_noop();
 
     test_slash_enters_filter_mode();
     test_filter_mode_appends_printable_characters();

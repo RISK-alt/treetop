@@ -45,6 +45,23 @@ static void select_first_row(t_app *a)
 }
 
 /*
+** While paused, con_wait_key() must NOT be timed against next_sample_at
+** at all: app_sample() is skipped while paused (see run_interactive()),
+** so next_sample_at sits frozen at whatever it was when 'p' was pressed.
+** Real time keeps moving, and within at most one refresh_ms it passes
+** next_sample_at - after that this would return 0 on every call forever,
+** and con_wait_key(0) returns immediately, so the loop would spin at
+** 100% of a core for as long as the tool stayed paused. That is the
+** worst possible failure for a tool whose entire purpose is showing
+** people what is eating their CPU, and it produces no visible symptom
+** (no redraw is even triggered), which is exactly why it must be fixed
+** here rather than relied on to show up in testing. MAIN_PAUSED_POLL_MS
+** gives the loop a fixed, harmless poll interval instead - long enough
+** to cost nothing, short enough that unpausing still feels immediate.
+*/
+#define MAIN_PAUSED_POLL_MS 250u
+
+/*
 ** Clamps con_wait_key's timeout to [0, refresh_ms]: never negative (a
 ** sample that overran its own interval must not turn into a negative
 ** wait, which - cast to the unsigned milliseconds con_wait_key expects -
@@ -56,15 +73,21 @@ static void select_first_row(t_app *a)
 ** refresh_ms every single time, nothing is cached across ticks).
 */
 static unsigned int    wait_timeout_ms(unsigned long long next_sample_at,
-                            unsigned int refresh_ms)
+                            unsigned int refresh_ms, int paused)
 {
     unsigned long long  now;
     unsigned long long  remaining_ms;
 
-    now = plat_now();
-    if (now >= next_sample_at)
-        return (0);
-    remaining_ms = (next_sample_at - now) / MAIN_TICKS_PER_MS;
+    if (paused)
+        remaining_ms = MAIN_PAUSED_POLL_MS;
+    else
+    {
+        now = plat_now();
+        if (now >= next_sample_at)
+            remaining_ms = 0;
+        else
+            remaining_ms = (next_sample_at - now) / MAIN_TICKS_PER_MS;
+    }
     if (remaining_ms > (unsigned long long)refresh_ms)
         remaining_ms = refresh_ms;
     return ((unsigned int)remaining_ms);
@@ -84,12 +107,15 @@ static unsigned int    wait_timeout_ms(unsigned long long next_sample_at,
 ** next_sample_at is advanced by += refresh_ms rather than reset to
 ** "now + refresh_ms": a sample that itself takes noticeable time (a busy
 ** machine, a slow plat_processes() call) then loses only the overrun,
-** never accumulates it tick over tick. If a sample runs long enough to
-** push next_sample_at into the past, wait_timeout_ms() reports a 0 ms
-** wait for the next iteration - the loop catches up immediately rather
-** than blocking past a deadline it already missed or busy-spinning (a
-** 0 ms wait still blocks in con_wait_key until a key or timeout, exactly
-** once, not in a tight loop).
+** never accumulates it tick over tick. But that additive step alone
+** only ever recovers one refresh_ms of backlog per iteration - after
+** the loop was paused for a while (next_sample_at frozen, see
+** wait_timeout_ms()) or the machine slept and resumed, next_sample_at
+** can sit real hours behind "now", and without a limit this would
+** replay that entire backlog as a tight burst of back-to-back
+** app_sample() calls until it caught up. The snap-forward below (if
+** still behind after the one += step, jump straight to now + refresh_ms
+** instead of looping) is what turns that burst into a single sample.
 */
 static int  run_interactive(void)
 {
@@ -100,6 +126,7 @@ static int  run_interactive(void)
     int                  key;
     int                  redraw;
     int                  was_first;
+    unsigned long long   now;
     unsigned long long   next_sample_at;
 
     if (app_init(&a) != 0)
@@ -126,14 +153,16 @@ static int  run_interactive(void)
     redraw = 0;
     while (a.running)
     {
-        key = con_wait_key(wait_timeout_ms(next_sample_at, a.refresh_ms));
+        key = con_wait_key(wait_timeout_ms(next_sample_at, a.refresh_ms,
+                    a.paused));
         if (key != 0)
         {
             if (key == TT_KEY_RESIZE)
                 con_size(&cols, &rows);
             redraw |= keys_handle(&a, key);
         }
-        if (plat_now() >= next_sample_at && !a.paused)
+        now = plat_now();
+        if (now >= next_sample_at && !a.paused)
         {
             was_first = a.first_tick;
             app_sample(&a);
@@ -141,6 +170,10 @@ static int  run_interactive(void)
                 select_first_row(&a);
             next_sample_at += (unsigned long long)a.refresh_ms
                     * MAIN_TICKS_PER_MS;
+            now = plat_now();
+            if (now >= next_sample_at)
+                next_sample_at = now + (unsigned long long)a.refresh_ms
+                        * MAIN_TICKS_PER_MS;
             redraw = 1;
         }
         if (redraw)
