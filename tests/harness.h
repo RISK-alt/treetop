@@ -4,8 +4,13 @@
 # include <string.h>
 # include <wchar.h>
 
+# include "process.h"
+
 extern int  g_tt_run;
 extern int  g_tt_fail;
+
+t_process   mk_proc(unsigned long pid, unsigned long long ct,
+                    unsigned long ppid, const wchar_t *image);
 
 # define TT_CHECK(cond)                                                       \
     do {                                                                      \

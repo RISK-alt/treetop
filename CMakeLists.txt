@@ -22,6 +22,7 @@ endif()
 add_library(treetop_core STATIC
     src/util/err.c
     src/render/format.c
+    src/model/table.c
 )
 target_include_directories(treetop_core PUBLIC include)
 
@@ -35,6 +36,7 @@ add_executable(treetop_tests
     tests/main.c
     tests/test_smoke.c
     tests/test_format.c
+    tests/test_table.c
 )
 target_include_directories(treetop_tests PRIVATE tests)
 target_link_libraries(treetop_tests PRIVATE treetop_core)

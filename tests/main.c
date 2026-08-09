@@ -14,10 +14,12 @@ typedef struct s_suite
 
 void    test_smoke(void);
 void    test_format(void);
+void    test_table(void);
 
 static const t_suite    g_suites[] = {
     { "smoke", test_smoke },
     { "format", test_format },
+    { "table", test_table },
 };
 
 static const size_t     g_suite_count = sizeof(g_suites) / sizeof(g_suites[0]);
