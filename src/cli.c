@@ -140,26 +140,27 @@ static int  parse_long(const char *s, long *out)
 ** is what keeps this from reading av[ac] when --refresh is the last
 ** argument - the exact crash the brief calls out by name.
 */
-static int  cli_parse_refresh(int ac, char **av, int *i, t_opts *out)
+static int  cli_parse_refresh(int ac, char **av, int *i, t_opts *out,
+                    FILE *err_stream)
 {
     long    v;
 
     if (*i + 1 >= ac)
     {
-        fprintf(stderr,
+        fprintf(err_stream,
                 "treetop: --refresh requires a value in milliseconds\n");
         return (-1);
     }
     (*i)++;
     if (parse_long(av[*i], &v) != 0)
     {
-        fprintf(stderr, "treetop: --refresh value '%s' is not a number\n",
+        fprintf(err_stream, "treetop: --refresh value '%s' is not a number\n",
                 av[*i]);
         return (-1);
     }
     if (v < (long)TT_CLI_REFRESH_MIN_MS || v > (long)TT_CLI_REFRESH_MAX_MS)
     {
-        fprintf(stderr,
+        fprintf(err_stream,
                 "treetop: --refresh must be between %u and %u ms\n",
                 TT_CLI_REFRESH_MIN_MS, TT_CLI_REFRESH_MAX_MS);
         return (-1);
@@ -170,7 +171,8 @@ static int  cli_parse_refresh(int ac, char **av, int *i, t_opts *out)
 
 /*                                   PARSE                                    */
 
-int     cli_parse(int ac, char **av, t_opts *out)
+int     cli_parse(int ac, char **av, t_opts *out, FILE *out_stream,
+            FILE *err_stream)
 {
     int i;
 
@@ -183,12 +185,12 @@ int     cli_parse(int ac, char **av, t_opts *out)
     {
         if (strcmp(av[i], "--help") == 0)
         {
-            cli_print_help(stdout);
+            cli_print_help(out_stream);
             return (1);
         }
         else if (strcmp(av[i], "--version") == 0)
         {
-            cli_print_version(stdout);
+            cli_print_version(out_stream);
             return (1);
         }
         else if (strcmp(av[i], "--json") == 0)
@@ -199,12 +201,12 @@ int     cli_parse(int ac, char **av, t_opts *out)
             out->no_color = 1;
         else if (strcmp(av[i], "--refresh") == 0)
         {
-            if (cli_parse_refresh(ac, av, &i, out) != 0)
+            if (cli_parse_refresh(ac, av, &i, out, err_stream) != 0)
                 return (-1);
         }
         else
         {
-            fprintf(stderr, "treetop: unknown option '%s'\n", av[i]);
+            fprintf(err_stream, "treetop: unknown option '%s'\n", av[i]);
             return (-1);
         }
         i++;

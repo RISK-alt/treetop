@@ -19,6 +19,36 @@ static void read_back(FILE *fp, char *buf, size_t n)
     buf[got] = '\0';
 }
 
+/*
+** cli_parse() now takes the two streams it writes to explicitly (see
+** cli.h) precisely so a test can route them through tmpfile() instead of
+** the real stdout/stderr: every rejected-flag test below used to print
+** its "treetop: ..." message straight to the actual ctest console, and
+** --help/--version tests printed the full help screen, on every single
+** run. This wrapper is what every call site below uses instead, so
+** ctest's own output stays just the pass/fail summary. Falls back to the
+** real streams only if tmpfile() itself fails (this environment cannot
+** create a temp file at all) rather than crashing on a NULL FILE* - rare
+** enough that losing output cleanliness in that one case is an acceptable
+** trade for not failing the whole suite over an unrelated I/O problem.
+*/
+static int  call_cli_parse(int ac, char **av, t_opts *out)
+{
+    FILE    *out_fp;
+    FILE    *err_fp;
+    int     rc;
+
+    out_fp = tmpfile();
+    err_fp = tmpfile();
+    rc = cli_parse(ac, av, out, out_fp != NULL ? out_fp : stdout,
+            err_fp != NULL ? err_fp : stderr);
+    if (out_fp != NULL)
+        fclose(out_fp);
+    if (err_fp != NULL)
+        fclose(err_fp);
+    return (rc);
+}
+
 /*                                   FLAGS                                    */
 
 static void test_json_flag(void)
@@ -30,7 +60,7 @@ static void test_json_flag(void)
     av[0] = "treetop";
     av[1] = "--json";
     o.no_color = 0;
-    rc = cli_parse(2, av, &o);
+    rc = call_cli_parse(2, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT(o.json, 1);
     TT_EQ_INT(o.selftest, 0);
@@ -45,7 +75,7 @@ static void test_selftest_flag(void)
     av[0] = "treetop";
     av[1] = "--selftest";
     o.no_color = 0;
-    rc = cli_parse(2, av, &o);
+    rc = call_cli_parse(2, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT(o.selftest, 1);
     TT_EQ_INT(o.json, 0);
@@ -59,7 +89,7 @@ static void test_no_flags_defaults(void)
 
     av[0] = "treetop";
     o.no_color = 0;
-    rc = cli_parse(1, av, &o);
+    rc = call_cli_parse(1, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT(o.json, 0);
     TT_EQ_INT(o.selftest, 0);
@@ -79,7 +109,7 @@ static void test_refresh_sets_value(void)
     av[1] = "--refresh";
     av[2] = "5000";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT((int)o.refresh_ms, 5000);
 }
@@ -99,7 +129,7 @@ static void test_refresh_boundary_100_is_accepted(void)
     av[1] = "--refresh";
     av[2] = "100";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT((int)o.refresh_ms, 100);
 }
@@ -114,7 +144,7 @@ static void test_refresh_boundary_60000_is_accepted(void)
     av[1] = "--refresh";
     av[2] = "60000";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT((int)o.refresh_ms, 60000);
 }
@@ -129,7 +159,7 @@ static void test_refresh_boundary_99_is_rejected(void)
     av[1] = "--refresh";
     av[2] = "99";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, -1);
 }
 
@@ -143,7 +173,7 @@ static void test_refresh_boundary_60001_is_rejected(void)
     av[1] = "--refresh";
     av[2] = "60001";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, -1);
 }
 
@@ -157,7 +187,7 @@ static void test_refresh_non_numeric_is_rejected(void)
     av[1] = "--refresh";
     av[2] = "soon";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, -1);
 }
 
@@ -171,7 +201,7 @@ static void test_refresh_negative_is_rejected(void)
     av[1] = "--refresh";
     av[2] = "-50";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, -1);
 }
 
@@ -190,7 +220,7 @@ static void test_refresh_flag_shaped_value_is_rejected(void)
     av[1] = "--refresh";
     av[2] = "--json";
     o.no_color = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, -1);
 }
 
@@ -215,7 +245,7 @@ static void test_refresh_missing_value_does_not_read_past_av(void)
     av[0] = "treetop";
     av[1] = "--refresh";
     o.no_color = 0;
-    rc = cli_parse(2, av, &o);
+    rc = call_cli_parse(2, av, &o);
     TT_EQ_INT(rc, -1);
     free(av);
 }
@@ -231,7 +261,7 @@ static void test_unknown_flag_is_rejected(void)
     av[0] = "treetop";
     av[1] = "--bogus";
     o.no_color = 0;
-    rc = cli_parse(2, av, &o);
+    rc = call_cli_parse(2, av, &o);
     TT_EQ_INT(rc, -1);
 }
 
@@ -253,7 +283,7 @@ static void test_help_returns_1_and_stops_parsing(void)
     av[2] = "--json";
     o.no_color = 0;
     o.json = 0;
-    rc = cli_parse(3, av, &o);
+    rc = call_cli_parse(3, av, &o);
     TT_EQ_INT(rc, 1);
     TT_EQ_INT(o.json, 0);
 }
@@ -267,7 +297,7 @@ static void test_version_returns_1(void)
     av[0] = "treetop";
     av[1] = "--version";
     o.no_color = 0;
-    rc = cli_parse(2, av, &o);
+    rc = call_cli_parse(2, av, &o);
     TT_EQ_INT(rc, 1);
 }
 
@@ -346,7 +376,7 @@ static void test_no_color_flag_sets_it(void)
     av[0] = "treetop";
     av[1] = "--no-color";
     o.no_color = 0;
-    rc = cli_parse(2, av, &o);
+    rc = call_cli_parse(2, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT(o.no_color, 1);
 }
@@ -359,7 +389,7 @@ static void test_no_color_env_preset_survives_with_no_flag(void)
 
     av[0] = "treetop";
     o.no_color = 1;
-    rc = cli_parse(1, av, &o);
+    rc = call_cli_parse(1, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT(o.no_color, 1);
 }
@@ -373,7 +403,7 @@ static void test_no_color_flag_does_not_clear_env_preset(void)
     av[0] = "treetop";
     av[1] = "--no-color";
     o.no_color = 1;
-    rc = cli_parse(2, av, &o);
+    rc = call_cli_parse(2, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT(o.no_color, 1);
 }
@@ -390,7 +420,7 @@ static void test_no_flag_no_env_leaves_color_on(void)
 
     av[0] = "treetop";
     o.no_color = 0;
-    rc = cli_parse(1, av, &o);
+    rc = call_cli_parse(1, av, &o);
     TT_EQ_INT(rc, 0);
     TT_EQ_INT(o.no_color, 0);
 }

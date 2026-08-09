@@ -304,7 +304,7 @@ int     main(int argc, char **argv)
 
     no_color_env = getenv("NO_COLOR");
     opts.no_color = (no_color_env != NULL && no_color_env[0] != '\0');
-    rc = cli_parse(argc, argv, &opts);
+    rc = cli_parse(argc, argv, &opts, stdout, stderr);
     if (rc == 1)
         return (0);
     if (rc == -1)
