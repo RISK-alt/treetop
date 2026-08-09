@@ -33,6 +33,29 @@
 ** help_open gates the full-screen binding list. All three are read and
 ** written only by keys_handle() (src/input/keys.c) and src/main.c - no
 ** other code in this codebase has a reason to touch them.
+**
+** Task 20's kill confirmation is the same shape, split across two files
+** for a reason: keys_handle() (treetop_core, no Win32) decides WHAT to
+** kill and owns opening/cancelling the dialog, but it cannot call
+** plat_kill() itself - that symbol only links into the treetop
+** executable, not treetop_tests. confirm_open/confirm_subtree/
+** confirm_count/confirm_victims are set by keys_handle() when F9 or
+** Shift+F9 fires on a real selection; confirm_go is the one-shot signal
+** it raises on 'y' for src/main.c to notice, actually call plat_kill()
+** for each victim, and clear every one of these fields back to "no
+** dialog open" afterwards. confirm_victims holds KEYS, not t_process
+** pointers or a snapshot of the row list - table_add() can realloc cur's
+** backing array on the very next sample while the dialog sits open, and
+** a (pid, create_time) key is the only thing in this codebase that
+** survives that. render_all() (src/render/chrome.c) re-resolves each key
+** against the live a->cur every frame to decide what draw_confirm()
+** actually shows, so a victim that exits while the dialog is still open
+** simply drops out of the displayed list rather than dangling.
+** kill_status carries the footer's failure text ("access denied...",
+** "process already exited") after src/main.c calls plat_kill(); it is
+** cleared whenever a fresh confirmation opens and otherwise persists
+** until the next kill attempt overwrites it - there is no separate timer
+** for it, matching how a->paused persists until explicitly toggled.
 */
 typedef struct s_app
 {
@@ -51,6 +74,13 @@ typedef struct s_app
     int                 paused;
     int                 filter_mode;
     int                 help_open;
+
+    int                 confirm_open;
+    int                 confirm_subtree;
+    int                 confirm_go;
+    t_proc_key          *confirm_victims;
+    size_t              confirm_count;
+    wchar_t             kill_status[64];
 }   t_app;
 
 int         app_init(t_app *a);

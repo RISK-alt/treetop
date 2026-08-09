@@ -92,3 +92,24 @@ size_t      tree_flatten(t_table *tbl, t_process **out, size_t max);
 void        tree_mark_orphans(t_table *tbl);
 int         is_dev_runtime(const wchar_t *image);
 int         is_system_image(const wchar_t *image);
+
+/*
+** Post-order (deepest-first) walk of root's own subtree: every descendant
+** is written before root itself, and within any parent/child pair the
+** child always precedes the parent, regardless of how children are
+** ordered among their own siblings. That is the one property a kill
+** list needs - terminate children before the parent that might be
+** waiting on them - and post-order gives it directly, unlike
+** tree_flatten's pre-order (parent, then children) which is right for
+** display but backwards for termination order.
+**
+** Unlike tree_flatten, this ignores p->collapsed entirely: collapsing a
+** row hides its children from the DISPLAY, it must never hide them from
+** what a subtree kill terminates. root itself is always included (the
+** last entry written), even if it has no children at all - out then
+** contains exactly the one process. root == NULL writes nothing and
+** returns 0, the same "nothing to do" contract table_find's callers
+** already rely on elsewhere.
+*/
+size_t      tree_collect_subtree(t_process *root, t_process **out,
+                size_t max);

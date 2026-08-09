@@ -126,6 +126,15 @@ void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
 */
 
 /*
+** Forward declaration: overlay_trunc()'s real definition lives further
+** down, shared with draw_help() and draw_confirm() (see its own comment
+** there). draw_footer_status() below needs it earlier in the file than
+** that.
+*/
+static void overlay_trunc(const wchar_t *src, int max, wchar_t *out,
+                size_t n);
+
+/*
 ** "/" + the live filter text + a one-cell inverted-space cursor, padded
 ** to `cols`. fmt_shorten (not a right-truncating helper) is deliberately
 ** reused here: it keeps the TAIL of the source string, which is exactly
@@ -224,10 +233,48 @@ static void draw_footer_keys(t_frame *f, int cols)
     frame_pad(f, avail - used);
 }
 
+/*
+** a->kill_status (Task 20: "access denied - try running as
+** administrator" / "process already exited", set by src/main.c after a
+** plat_kill() failure - see app.h) right-truncates via overlay_trunc(),
+** not fmt_shorten(): the identifying word ("access", "process") is the
+** FIRST thing on the line here, same reasoning as help_trunc's own
+** comment for the HELP key column, and the opposite of
+** draw_footer_filter's cursor-adjacent tail above.
+*/
+static void draw_footer_status(t_frame *f, const wchar_t *msg, int cols)
+{
+    wchar_t buf[128];
+    int     avail;
+    int     used;
+
+    avail = cols;
+    if (avail < 0)
+        avail = 0;
+    overlay_trunc(msg, avail, buf, 128);
+    frame_puts(f, buf);
+    used = (int)wcslen(buf);
+    if (used < avail)
+        frame_pad(f, avail - used);
+}
+
+/*
+** Three mutually exclusive layouts, checked in this order: an active
+** filter always wins (it needs the user's own typing visible and
+** editable, which nothing else on this line competes for); otherwise a
+** pending kill_status message from the last F9/Shift+F9 attempt is shown
+** until the next one overwrites or clears it; otherwise the ordinary key
+** bar. There is no timer that expires kill_status on its own - it is
+** exactly as persistent as a->paused, cleared only by the next
+** open_kill_confirm() (a fresh dialog opening - see keys.c) or the next
+** execute_confirmed_kill() (src/main.c) outcome.
+*/
 void    draw_footer(t_frame *f, const t_app *a, int cols)
 {
     if (a->view.filter[0] != L'\0')
         draw_footer_filter(f, &a->view, cols);
+    else if (a->kill_status[0] != L'\0')
+        draw_footer_status(f, a->kill_status, cols);
     else
         draw_footer_keys(f, cols);
     frame_puts(f, L"\r\n");
@@ -298,18 +345,24 @@ static size_t   build_help_lines(wchar_t lines[][TT_HELP_LINE_BUF])
 
 /*
 ** Right-truncates with a trailing ellipsis, the mirror image of
-** fmt_shorten's leading one: a help line's identifying token (the key)
-** is the FIRST thing on it, so the tail is what gets cut, the same
-** reasoning fmt_command's own comment gives for the COMMAND column. This
-** is not fmt_command itself - there is no image/cmdline split here, just
-** one already-composed string - so a small local helper is genuinely a
-** distinct case, not a second copy of an existing one. Mirrors
-** fmt_shorten's own degenerate-width guard (bounded to n, not just max -
-** see commit cde8307) for the same reason: a caller handing this a
-** buffer of exactly one wchar_t must still get a valid, in-bounds
-** result.
+** fmt_shorten's leading one: a help line's or a kill-confirm victim
+** line's identifying token (the key, or the PID) is the FIRST thing on
+** it, so the tail is what gets cut, the same reasoning fmt_command's own
+** comment gives for the COMMAND column. This is not fmt_command itself -
+** there is no image/cmdline split here, just one already-composed
+** string - so a small local helper is genuinely a distinct case, not a
+** second copy of an existing one. Mirrors fmt_shorten's own
+** degenerate-width guard (bounded to n, not just max - see commit
+** cde8307) for the same reason: a caller handing this a buffer of
+** exactly one wchar_t must still get a valid, in-bounds result.
+**
+** Shared, along with overlay_blank_rows()/overlay_border_row() below, by
+** every box-shaped overlay this file draws - draw_help() (Task 18) and
+** draw_confirm() (Task 20) - since both degrade the same way: shrink the
+** box to fit cols, truncate content lines that do not fit, and refuse to
+** draw a malformed box at all below a minimum viable size.
 */
-static void help_trunc(const wchar_t *src, int max, wchar_t *out, size_t n)
+static void overlay_trunc(const wchar_t *src, int max, wchar_t *out, size_t n)
 {
     size_t  len;
 
@@ -340,7 +393,7 @@ static void help_trunc(const wchar_t *src, int max, wchar_t *out, size_t n)
     swprintf(out, n, L"%.*ls\u2026", max - 1, src);
 }
 
-static void help_blank_rows(t_frame *f, int cols, int count)
+static void overlay_blank_rows(t_frame *f, int cols, int count)
 {
     int i;
 
@@ -353,7 +406,7 @@ static void help_blank_rows(t_frame *f, int cols, int count)
     }
 }
 
-static void help_border_row(t_frame *f, int left_pad, int right_pad,
+static void overlay_border_row(t_frame *f, int left_pad, int right_pad,
                             int inner_w, int top)
 {
     int i;
@@ -378,7 +431,7 @@ static void help_border_row(t_frame *f, int left_pad, int right_pad,
 **
 **   - cols smaller than the box's natural width: the box itself shrinks
 **     to fit, and every content line is right-truncated with a trailing
-**     ellipsis (help_trunc) rather than wrapped.
+**     ellipsis (overlay_trunc) rather than wrapped.
 **   - rows smaller than the box's natural height: rows are dropped from
 **     the BOTTOM of the content list (title first, then bindings in
 **     brief order, the dismiss hint last) rather than every line being
@@ -429,7 +482,7 @@ void    draw_help(t_frame *f, int cols, int rows)
         box_h = (int)content_count + 2;
     if (box_w < 5 || box_h < 3)
     {
-        help_blank_rows(f, cols, rows);
+        overlay_blank_rows(f, cols, rows);
         return ;
     }
     inner_w = box_w - 4;
@@ -441,8 +494,8 @@ void    draw_help(t_frame *f, int cols, int rows)
     right_pad = cols - box_w - left_pad;
     top_blank = (rows - box_h) / 2;
     bottom_blank = rows - box_h - top_blank;
-    help_blank_rows(f, cols, top_blank);
-    help_border_row(f, left_pad, right_pad, inner_w, 1);
+    overlay_blank_rows(f, cols, top_blank);
+    overlay_border_row(f, left_pad, right_pad, inner_w, 1);
     i = 0;
     while (i < content_cap)
     {
@@ -450,7 +503,7 @@ void    draw_help(t_frame *f, int cols, int rows)
         frame_puts(f, L"\u2502 ");
         if (i < content_shown)
         {
-            help_trunc(lines[i], inner_w, trunc_buf, TT_HELP_LINE_BUF);
+            overlay_trunc(lines[i], inner_w, trunc_buf, TT_HELP_LINE_BUF);
             frame_printf(f, L"%-*ls", inner_w, trunc_buf);
         }
         else
@@ -460,8 +513,263 @@ void    draw_help(t_frame *f, int cols, int rows)
         frame_puts(f, L"\r\n");
         i++;
     }
-    help_border_row(f, left_pad, right_pad, inner_w, 0);
-    help_blank_rows(f, cols, bottom_blank);
+    overlay_border_row(f, left_pad, right_pad, inner_w, 0);
+    overlay_blank_rows(f, cols, bottom_blank);
+}
+
+/*                                  CONFIRM                                   */
+
+/*
+** Fixed-format victim line: two leading spaces, the PID left-justified in
+** a TT_CONFIRM_PID_COL-wide field, one space, then the image name
+** shortened to TT_CONFIRM_IMG_MAX cells. This is deliberately a FIXED
+** format, not one measured from the actual n victims handed to
+** draw_confirm(): a subtree kill can list an unbounded number of
+** processes, so sizing the box from every one of their real widths would
+** mean scanning (and potentially formatting) all n up front even when
+** only a handful end up visible. A fixed worst-case width is exactly
+** enough to size the box correctly - overlay_trunc() below still
+** right-truncates anything that turns out longer than expected, the same
+** safety net draw_help() already relies on for its own content lines.
+*/
+#define TT_CONFIRM_PID_COL     7
+#define TT_CONFIRM_IMG_MAX     40
+/*
+** Wide enough to hold the longest title confirm_resolve_and_draw() can
+** compose UNTRUNCATED: "kill process " (13) + a 10-digit PID + " (" (2)
+** + up to TT_IMAGE_LEN - 1 (63) image characters + ")?" (2) = 90 wchar_t,
+** plus the terminator. overlay_trunc()'s "fits within max" branch trusts
+** `max` (inner_w, which tracks this same worst case via
+** confirm_inner_width()) without separately checking it against the
+** destination buffer's own capacity `n` - if this were smaller than that
+** worst case, a long enough title on a wide enough terminal would get
+** silently cut off by swprintf's own bound instead of properly
+** ellipsis-truncated, the exact defect class the brief's width-invariant
+** warning is about.
+*/
+#define TT_CONFIRM_LINE_BUF    100
+#define TT_CONFIRM_PROMPT      L"Terminate? [y/N]"
+
+static void confirm_victim_line(const t_process *p, wchar_t *out, size_t n)
+{
+    wchar_t img[TT_CONFIRM_IMG_MAX + 1];
+
+    fmt_shorten(p->image, TT_CONFIRM_IMG_MAX, img,
+            TT_CONFIRM_IMG_MAX + 1);
+    swprintf(out, n, L"  %-*lu %ls", TT_CONFIRM_PID_COL, p->key.pid, img);
+}
+
+/*
+** Worst-case natural width across every line draw_confirm() might emit:
+** the title (caller-composed, arbitrary but short in practice), the
+** prompt, a full-width victim line and the widest plausible "... and N
+** more" line. See confirm_victim_line()'s own comment for why this is a
+** fixed bound rather than a scan over the real victim list.
+*/
+static int  confirm_inner_width(const wchar_t *title)
+{
+    int         w;
+    int         vw;
+    wchar_t     more[TT_CONFIRM_LINE_BUF];
+
+    w = (int)wcslen(title);
+    if ((int)wcslen(TT_CONFIRM_PROMPT) > w)
+        w = (int)wcslen(TT_CONFIRM_PROMPT);
+    vw = 2 + TT_CONFIRM_PID_COL + 1 + TT_CONFIRM_IMG_MAX;
+    if (vw > w)
+        w = vw;
+    swprintf(more, TT_CONFIRM_LINE_BUF, L"  ... and %d more", 9999999);
+    if ((int)wcslen(more) > w)
+        w = (int)wcslen(more);
+    return (w);
+}
+
+static void confirm_content_row(t_frame *f, int left_pad, int right_pad,
+                            int inner_w, const wchar_t *text)
+{
+    wchar_t buf[TT_CONFIRM_LINE_BUF];
+
+    frame_pad(f, left_pad);
+    frame_puts(f, L"\u2502 ");
+    overlay_trunc(text, inner_w, buf, TT_CONFIRM_LINE_BUF);
+    frame_printf(f, L"%-*ls", inner_w, buf);
+    frame_puts(f, L" \u2502");
+    frame_pad(f, right_pad);
+    frame_puts(f, L"\r\n");
+}
+
+static void confirm_blank_row(t_frame *f, int left_pad, int right_pad,
+                            int inner_w)
+{
+    frame_pad(f, left_pad);
+    frame_puts(f, L"\u2502 ");
+    frame_pad(f, inner_w);
+    frame_puts(f, L" \u2502");
+    frame_pad(f, right_pad);
+    frame_puts(f, L"\r\n");
+}
+
+/*
+** The Task 20 kill confirmation overlay - see render.h for the full
+** contract. Structured exactly like draw_help() (box degrades on cols,
+** then on rows, then refuses to draw at all below a minimum viable size)
+** with one addition: content rows are always exactly [title, up to
+** (content_cap - 2) victim/"+more" lines, ..., prompt] - title and prompt
+** are the two reserved end slots that NEVER lose to victim lines, which
+** is what guarantees "still show the count and the y/N prompt" (the
+** brief's own ambiguity resolution #3) even when there is no room for a
+** single victim.
+**
+** box_h is clamped against `n` (the natural content height, 2 + n) the
+** same way draw_help() clamps against its own fixed binding count - n is
+** bounded defensively here (TT_CONFIRM_MAX_NATURAL) purely so that
+** arithmetic on it can never overflow int, not because a real subtree is
+** ever remotely that large.
+*/
+#define TT_CONFIRM_MAX_NATURAL  100000
+
+void    draw_confirm(t_frame *f, const wchar_t *title, t_process **victims,
+                    size_t n, int cols, int rows)
+{
+    size_t      n_bounded;
+    int         inner_desired;
+    int         box_w;
+    int         box_h;
+    int         inner_w;
+    int         content_cap;
+    int         victim_slots;
+    int         victims_shown;
+    int         more_count;
+    int         filler;
+    int         left_pad;
+    int         right_pad;
+    int         top_blank;
+    int         bottom_blank;
+    wchar_t     line[TT_CONFIRM_LINE_BUF];
+    int         i;
+
+    n_bounded = n;
+    if (n_bounded > TT_CONFIRM_MAX_NATURAL)
+        n_bounded = TT_CONFIRM_MAX_NATURAL;
+    inner_desired = confirm_inner_width(title);
+    box_w = cols;
+    if (box_w > inner_desired + 4)
+        box_w = inner_desired + 4;
+    box_h = rows;
+    if (box_h < 0)
+        box_h = 0;
+    if (box_h > (int)n_bounded + 4)
+        box_h = (int)n_bounded + 4;
+    if (box_w < 5 || box_h < 4)
+    {
+        overlay_blank_rows(f, cols, rows);
+        return ;
+    }
+    inner_w = box_w - 4;
+    content_cap = box_h - 2;
+    victim_slots = content_cap - 2;
+    if ((size_t)victim_slots >= n)
+    {
+        victims_shown = (int)n;
+        more_count = 0;
+    }
+    else if (victim_slots >= 1)
+    {
+        victims_shown = victim_slots - 1;
+        more_count = (int)(n - (size_t)victims_shown);
+    }
+    else
+    {
+        victims_shown = 0;
+        more_count = 0;
+    }
+    left_pad = (cols - box_w) / 2;
+    right_pad = cols - box_w - left_pad;
+    top_blank = (rows - box_h) / 2;
+    bottom_blank = rows - box_h - top_blank;
+    overlay_blank_rows(f, cols, top_blank);
+    overlay_border_row(f, left_pad, right_pad, inner_w, 1);
+    confirm_content_row(f, left_pad, right_pad, inner_w, title);
+    i = 0;
+    while (i < victims_shown)
+    {
+        confirm_victim_line(victims[i], line, TT_CONFIRM_LINE_BUF);
+        confirm_content_row(f, left_pad, right_pad, inner_w, line);
+        i++;
+    }
+    if (more_count > 0)
+    {
+        swprintf(line, TT_CONFIRM_LINE_BUF, L"  ... and %d more",
+                more_count);
+        confirm_content_row(f, left_pad, right_pad, inner_w, line);
+    }
+    filler = victim_slots - victims_shown - (more_count > 0 ? 1 : 0);
+    while (filler > 0)
+    {
+        confirm_blank_row(f, left_pad, right_pad, inner_w);
+        filler--;
+    }
+    confirm_content_row(f, left_pad, right_pad, inner_w, TT_CONFIRM_PROMPT);
+    overlay_border_row(f, left_pad, right_pad, inner_w, 0);
+    overlay_blank_rows(f, cols, bottom_blank);
+}
+
+/*
+** Resolves a->confirm_victims (KEYS, captured when F9/Shift+F9 opened
+** the dialog - see app.h) against the CURRENT a->cur, builds the caller
+** title, and draws the overlay. This runs every frame the dialog stays
+** open, not once at open time: a->cur can be swapped out from under it
+** by an app_sample() that happens while the user is still deciding (the
+** event loop does not pause sampling just because a dialog is up), and a
+** victim that has exited in the meantime must disappear from what is
+** shown rather than being drawn as "about to die" when it no longer
+** exists. This is display-only - it changes nothing about which
+** processes src/main.c actually calls plat_kill() on when 'y' lands, and
+** it is NOT the safety-critical re-check itself: that one happens inside
+** plat_kill() against a live handle, immediately before TerminateProcess,
+** which is the only place close enough to the actual kill for the check
+** to mean anything.
+**
+** shown[] is sized to a->confirm_count (the count captured at open time,
+** an upper bound - resolution can only ever remove entries, never add
+** them) rather than to a->cur.count, since the confirm dialog's own
+** victim set is what is being displayed, not the whole live table.
+*/
+static void confirm_resolve_and_draw(t_frame *f, t_app *a, int cols,
+                    int rows)
+{
+    t_process   **shown;
+    size_t      n;
+    size_t      i;
+    t_process   *p;
+    wchar_t     title[TT_CONFIRM_LINE_BUF];
+
+    shown = NULL;
+    n = 0;
+    if (a->confirm_count > 0)
+        shown = malloc(sizeof(t_process *) * a->confirm_count);
+    if (shown != NULL)
+    {
+        i = 0;
+        while (i < a->confirm_count)
+        {
+            p = table_find(&a->cur, a->confirm_victims[i]);
+            if (p != NULL)
+                shown[n++] = p;
+            i++;
+        }
+    }
+    if (a->confirm_subtree)
+        swprintf(title, TT_CONFIRM_LINE_BUF,
+                L"kill subtree - %llu process%ls?",
+                (unsigned long long)n, n == 1 ? L"" : L"es");
+    else if (n == 1)
+        swprintf(title, TT_CONFIRM_LINE_BUF, L"kill process %lu (%ls)?",
+                shown[0]->key.pid, shown[0]->image);
+    else
+        swprintf(title, TT_CONFIRM_LINE_BUF, L"kill process?");
+    draw_confirm(f, title, shown, n, cols, rows);
+    free(shown);
 }
 
 /*                                 RENDER_ALL                                 */
@@ -516,6 +824,16 @@ void    draw_help(t_frame *f, int cols, int rows)
 ** zero-initialised t_app starts in, or a selected process that has since
 ** exited); Task 19 is responsible for pointing a->selected at a real row
 ** before the first frame the user should see something highlighted in.
+**
+** Task 20's kill confirmation is modal: while a->confirm_open, this
+** function draws NOTHING else - no header, meters, table or footer, just
+** confirm_resolve_and_draw()'s overlay filling the entire cols x rows
+** frame - and returns immediately after. That mirrors how a live
+** terminal dialog actually works (nothing behind it should be readable
+** or misread as still-interactive) and, just as importantly, keeps the
+** victim list's own screen space unconstrained by the header/meters/
+** footer budget math below, which exists to serve a completely different
+** section set.
 */
 void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
 {
@@ -533,6 +851,11 @@ void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
 
     frame_reset(f);
     frame_puts(f, L"\x1b[H\x1b[2J");
+    if (a->confirm_open)
+    {
+        confirm_resolve_and_draw(f, a, cols, rows);
+        return ;
+    }
     rowbuf = NULL;
     nrows = 0;
     if (a->cur.count > 0)

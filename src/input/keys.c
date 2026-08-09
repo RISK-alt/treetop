@@ -9,17 +9,26 @@
 ** the event loop (src/main.c) calls for every keystroke con_wait_key()
 ** reports, and the only place in the codebase - besides app_sample()
 ** carrying a->selected/collapsed forward across a resample - that
-** mutates a->selected, a->view, a->paused, a->filter_mode or
-** a->help_open. It touches no Win32 API, only the TT_KEY_* constants
-** from console.h, so it lives in treetop_core and is unit-testable
-** without a live terminal (tests/test_keys.c).
+** mutates a->selected, a->view, a->paused, a->filter_mode, a->help_open
+** or the confirm_* fields. It touches no Win32 API, only the TT_KEY_*
+** constants from console.h, so it lives in treetop_core and is
+** unit-testable without a live terminal (tests/test_keys.c). It cannot,
+** for the same reason, call plat_kill() itself - see app.h's own comment
+** on confirm_go for how that split works.
 **
 ** Precedence, checked in this order every call: TT_KEY_RESIZE always
 ** forces a redraw and is otherwise a no-op here (re-reading con_size is
-** a console operation - src/main.c's job, not this file's); filter mode,
-** when active, swallows every ordinary binding below; the help overlay,
-** when open, treats ANY key as "dismiss" per its own "press any key to
-** close" hint (chrome.c); only then do the ordinary bindings apply.
+** a console operation - src/main.c's job, not this file's) - deliberately
+** BEFORE the confirm check below, so a terminal resize can never be
+** mistaken for a keystroke that cancels a pending kill. The kill
+** confirmation, when open, is checked next and swallows every other key
+** the same way filter mode does - it is the more modal of the two, since
+** nothing may ever read as a kill by accident (see the brief: "no
+** unconfirmed kill path may exist"). Filter mode, when active, swallows
+** every ordinary binding below it in turn; the help overlay, when open,
+** treats ANY key as "dismiss" per its own "press any key to close" hint
+** (chrome.c); only then do the ordinary bindings - including F9 and
+** Shift+F9 themselves - apply.
 */
 
 #define TT_REFRESH_STEP_MS  250u
@@ -217,13 +226,126 @@ static int  filter_key(t_app *a, int key)
     return (0);
 }
 
-/*                                  NORMAL                                    */
+/*                                   KILL                                     */
 
 /*
-** F9 / Shift+F9 (kill) are deliberately absent - Task 20's job, not this
-** one's (see the brief). They fall through to the final `return (0)`
-** along with every other unbound key.
+** PID 0 (System Idle Process) and PID 4 (System) are refused outright,
+** as close to the point of intent as possible: no dialog opens for
+** either at all, so there is no "y" a user could even press. plat_kill()
+** (src/platform/win_kill.c) refuses them again independently, since it
+** is the final gate and this file's refusal must never be the ONLY one -
+** but a confirmation prompt that could ever show System as its victim
+** would already be the wrong answer regardless of what pressing y later
+** does.
 */
+static int  is_protected_pid(unsigned long pid)
+{
+    return (pid == 0 || pid == 4);
+}
+
+/*
+** Opens a kill confirmation for the current selection: F9 (subtree == 0)
+** targets that one process alone, Shift+F9 (subtree == 1) targets its
+** whole subtree, deepest descendant first, via tree_collect_subtree()
+** (src/model/tree.c) - so children are terminated before the parent that
+** might be waiting on them. confirm_victims stores KEYS, not pointers or
+** t_process copies - see app.h's own comment on why a snapshot of
+** pointers would not survive the dialog staying open across a resample.
+**
+** Nothing is killed here, or anywhere else in this file: this only
+** decides WHO would die and shows the prompt. The actual plat_kill()
+** calls happen in src/main.c, after 'y' - see confirm_key() below.
+**
+** Returns 0 (no redraw, dialog not opened) when there is no live
+** selection to act on or it names a protected PID; a caller pressing F9
+** on System or on a stale/empty selection sees nothing happen at all,
+** which is exactly the point.
+*/
+static int  open_kill_confirm(t_app *a, int subtree)
+{
+    t_process   *sel;
+    t_process   **buf;
+    size_t      cap;
+    size_t      n;
+    size_t      i;
+    size_t      stored;
+
+    sel = table_find(&a->cur, a->selected);
+    if (sel == NULL || is_protected_pid(sel->key.pid))
+        return (0);
+    cap = subtree ? a->cur.count : 1;
+    if (cap == 0)
+        cap = 1;
+    a->confirm_victims = malloc(sizeof(t_proc_key) * cap);
+    if (a->confirm_victims == NULL)
+        return (0);
+    stored = 0;
+    if (subtree)
+    {
+        buf = malloc(sizeof(t_process *) * cap);
+        if (buf == NULL)
+        {
+            free(a->confirm_victims);
+            a->confirm_victims = NULL;
+            return (0);
+        }
+        n = tree_collect_subtree(sel, buf, cap);
+        for (i = 0; i < n; i++)
+            if (!is_protected_pid(buf[i]->key.pid))
+                a->confirm_victims[stored++] = buf[i]->key;
+        free(buf);
+    }
+    else
+        a->confirm_victims[stored++] = sel->key;
+    a->confirm_count = stored;
+    a->confirm_open = 1;
+    a->confirm_subtree = subtree;
+    a->confirm_go = 0;
+    a->kill_status[0] = L'\0';
+    return (1);
+}
+
+static void close_confirm(t_app *a)
+{
+    free(a->confirm_victims);
+    a->confirm_victims = NULL;
+    a->confirm_count = 0;
+    a->confirm_open = 0;
+    a->confirm_subtree = 0;
+    a->confirm_go = 0;
+}
+
+/*
+** The one place in this codebase the brief's "defaults to no" rule is
+** enforced: the literal lower-case character 'y' - and nothing else, not
+** 'Y', not Enter, not a second F9, not the up/down arrows a user might
+** reflexively reach for to scroll a long list - raises confirm_go for
+** src/main.c to act on next. Every other key cancels outright via
+** close_confirm(), which is also what makes "scrollable if it does not
+** fit" (the brief's own phrase for Shift+F9's victim list) a rendering
+** property of draw_confirm() rather than an interactive one here: an
+** arrow key that scrolled the list instead of cancelling would be a key
+** other than 'y' that does NOT cancel, which is exactly the hole "anything
+** else cancels" exists to close. draw_confirm() instead shows as many
+** victims as fit and a "+N more" count for the rest - see chrome.c.
+**
+** Either branch returns 1: the dialog's on-screen state changes either
+** way (it closes on cancel, or immediately after src/main.c services
+** confirm_go), so a redraw is always warranted.
+*/
+static int  confirm_key(t_app *a, int key)
+{
+    if (key == (int)L'y')
+    {
+        a->confirm_go = 1;
+        return (1);
+    }
+    close_confirm(a);
+    return (1);
+}
+
+/*                                  NORMAL                                    */
+
 static int  normal_key(t_app *a, int key)
 {
     if (key == TT_KEY_UP)
@@ -262,6 +384,10 @@ static int  normal_key(t_app *a, int key)
         return (cycle_sort(a, 1));
     if (key == (int)L'<')
         return (cycle_sort(a, -1));
+    if (key == TT_KEY_F9)
+        return (open_kill_confirm(a, 0));
+    if (key == TT_KEY_SHIFT_F9)
+        return (open_kill_confirm(a, 1));
     if (key == (int)L'p')
     {
         a->paused = !a->paused;
@@ -290,6 +416,8 @@ int     keys_handle(t_app *a, int key)
 {
     if (key == TT_KEY_RESIZE)
         return (1);
+    if (a->confirm_open)
+        return (confirm_key(a, key));
     if (a->filter_mode)
         return (filter_key(a, key));
     if (a->help_open)

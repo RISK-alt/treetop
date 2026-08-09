@@ -150,6 +150,41 @@ size_t  tree_flatten(t_table *tbl, t_process **out, size_t max)
     return (n);
 }
 
+/*                              SUBTREE COLLECTION                            */
+
+/*
+** guard bounds recursion depth exactly like set_depth/aggregate above, for
+** the same reason: tree_build's strict create_time ordering already makes
+** a real parent/child cycle impossible, this is only insurance against a
+** pathologically deep legitimate chain blowing the stack. Hitting the
+** guard truncates the walk (root itself may end up missing from a
+** sufficiently deep, sufficiently pathological tree) rather than hanging.
+*/
+static size_t   collect_deepest(t_process *p, t_process **out, size_t max,
+                    size_t n, int guard)
+{
+    t_process   *c;
+
+    if (guard > 512)
+        return (n);
+    c = p->first_child;
+    while (c != NULL)
+    {
+        n = collect_deepest(c, out, max, n, guard + 1);
+        c = c->next_sibling;
+    }
+    if (n < max)
+        out[n++] = p;
+    return (n);
+}
+
+size_t  tree_collect_subtree(t_process *root, t_process **out, size_t max)
+{
+    if (root == NULL)
+        return (0);
+    return (collect_deepest(root, out, max, 0, 0));
+}
+
 /*                                 ORPHANS                                    */
 
 /*

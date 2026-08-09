@@ -477,13 +477,22 @@ static void test_unknown_key_is_noop(void)
     table_free(&a.cur);
 }
 
-static void test_f9_is_not_implemented_yet(void)
+/*
+** F9/Shift+F9 with no live selection at all (a freshly zeroed t_app, the
+** same state test_move_on_empty_table_is_safe_noop exercises for
+** navigation): there is nothing table_find() can resolve a->selected
+** against, so no dialog opens - the same "nothing to act on" outcome as
+** before Task 20 existed, just for a different reason now.
+*/
+static void test_f9_with_no_selection_opens_nothing(void)
 {
     t_app   a;
 
     mk_flat3(&a);
     TT_EQ_INT(keys_handle(&a, TT_KEY_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
     TT_EQ_INT(keys_handle(&a, TT_KEY_SHIFT_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
     table_free(&a.cur);
 }
 
@@ -692,6 +701,273 @@ static void test_filter_buffer_cannot_overflow(void)
     table_free(&a.cur);
 }
 
+/*                                   KILL                                     */
+
+/*
+** A 3-deep chain (claude(100) -> node(200) -> rg(300)) rather than
+** mk_flat3's siblings: subtree order only means something when there is
+** a real parent/child relationship to get right.
+*/
+static void mk_chain3(t_app *a)
+{
+    t_process   p;
+
+    mk_app(a);
+    TT_EQ_INT(table_init(&a->cur, 8), 0);
+    view_init(&a->view);
+    a->view.tree_mode = 0;
+    a->view.sort = SORT_PID;
+    a->view.sort_desc = 0;
+    p = mk_proc(100, 1000, 4, L"claude.exe");   table_add(&a->cur, &p);
+    p = mk_proc(200, 2000, 100, L"node.exe");   table_add(&a->cur, &p);
+    p = mk_proc(300, 3000, 200, L"rg.exe");     table_add(&a->cur, &p);
+    tree_build(&a->cur);
+    a->refresh_ms = 1000;
+    a->running = 1;
+}
+
+/*
+** F9 on a real selection opens a single-victim confirmation: confirm_open
+** is set, confirm_subtree is 0, and the one victim key is exactly the
+** selected process - not its parent, not some other row. Critically,
+** confirm_go is NOT set by F9 alone: opening the dialog must never by
+** itself be a step toward killing anything (the brief's own "F9 with no
+** confirmation does not kill").
+*/
+static void test_f9_opens_single_victim_confirm(void)
+{
+    t_app   a;
+
+    mk_flat3(&a);
+    a.selected = a.cur.procs[1].key;              /* pid 200 */
+    TT_EQ_INT(keys_handle(&a, TT_KEY_F9), 1);
+    TT_EQ_INT(a.confirm_open, 1);
+    TT_EQ_INT(a.confirm_subtree, 0);
+    TT_EQ_INT(a.confirm_go, 0);
+    TT_EQ_INT((int)a.confirm_count, 1);
+    TT_CHECK(key_eq(a.confirm_victims[0], a.cur.procs[1].key));
+    table_free(&a.cur);
+}
+
+/*
+** Shift+F9 on the root of the chain fixture must collect the WHOLE
+** subtree, deepest descendant first: rg(300), then node(200), then
+** claude(100) itself last - matching tree_collect_subtree()'s own
+** contract (see test_tree.c). A stub that just listed the selected row
+** alone, or listed the subtree in tree_flatten's pre-order instead, both
+** fail this exact ordering check.
+*/
+static void test_shift_f9_opens_subtree_confirm_deepest_first(void)
+{
+    t_app   a;
+
+    mk_chain3(&a);
+    a.selected = a.cur.procs[0].key;               /* claude, the root */
+    TT_EQ_INT(keys_handle(&a, TT_KEY_SHIFT_F9), 1);
+    TT_EQ_INT(a.confirm_open, 1);
+    TT_EQ_INT(a.confirm_subtree, 1);
+    TT_EQ_INT((int)a.confirm_count, 3);
+    TT_CHECK(key_eq(a.confirm_victims[0], a.cur.procs[2].key)); /* rg */
+    TT_CHECK(key_eq(a.confirm_victims[1], a.cur.procs[1].key)); /* node */
+    TT_CHECK(key_eq(a.confirm_victims[2], a.cur.procs[0].key)); /* claude */
+    table_free(&a.cur);
+}
+
+/*
+** F9/Shift+F9 selected on PID 0 or PID 4 must open NOTHING - refused
+** outright, per the brief, before any dialog (and therefore any 'y') is
+** even possible. Checked independently for both keys and both protected
+** PIDs, since a fix that only special-cased one combination would still
+** leave a live kill path through the others.
+*/
+static void test_f9_and_shift_f9_refuse_pid0_and_pid4(void)
+{
+    t_app   a;
+    t_process   p;
+
+    mk_app(&a);
+    TT_EQ_INT(table_init(&a.cur, 8), 0);
+    view_init(&a.view);
+    p = mk_proc(0, 0, 0, L"System Idle Process"); table_add(&a.cur, &p);
+    p = mk_proc(4, 0, 0, L"System");              table_add(&a.cur, &p);
+    tree_build(&a.cur);
+    a.refresh_ms = 1000;
+    a.running = 1;
+
+    a.selected = a.cur.procs[0].key;               /* pid 0 */
+    TT_EQ_INT(keys_handle(&a, TT_KEY_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
+    TT_EQ_INT(keys_handle(&a, TT_KEY_SHIFT_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
+
+    a.selected = a.cur.procs[1].key;               /* pid 4 */
+    TT_EQ_INT(keys_handle(&a, TT_KEY_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
+    TT_EQ_INT(keys_handle(&a, TT_KEY_SHIFT_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
+
+    table_free(&a.cur);
+}
+
+/*
+** The literal key 'y', and only 'y', raises confirm_go. Checked
+** together with the negative case right below it so this file cannot
+** pass by having BOTH branches of confirm_key() do the same thing.
+*/
+static void test_confirm_y_raises_confirm_go(void)
+{
+    t_app   a;
+
+    mk_flat3(&a);
+    a.selected = a.cur.procs[0].key;
+    keys_handle(&a, TT_KEY_F9);
+    TT_EQ_INT(keys_handle(&a, (int)L'y'), 1);
+    TT_EQ_INT(a.confirm_go, 1);
+    /* The dialog itself is still open - src/main.c, not keys_handle(),
+       is what closes it once the kill is actually serviced. */
+    TT_EQ_INT(a.confirm_open, 1);
+    table_free(&a.cur);
+}
+
+/*
+** MANDATORY per the brief: "every key that is not y cancels - test
+** several distinct ones, not just n." Six deliberately varied keys -
+** the obvious 'n', Escape, Enter (both of which mean something ELSE in
+** filter mode, proving this is not accidentally routing through
+** filter_key()), an arrow key (the natural reflex to scroll a long
+** list), a digit, and critically the UPPER-CASE 'Y' - the brief's own
+** "y confirms" means the lower-case character specifically, and a
+** case-insensitive comparison would be a real, dangerous divergence
+** from "anything else cancels" that this line alone catches. Every one
+** must cancel: confirm_open drops to 0, confirm_go stays 0, and the
+** victim list is freed (checked indirectly: a fresh F9 afterwards must
+** still work, which a leaked/corrupted allocation could break).
+*/
+static void test_confirm_every_non_y_key_cancels(void)
+{
+    t_app   a;
+    int     keys[6];
+    int     i;
+
+    keys[0] = (int)L'n';
+    keys[1] = TT_KEY_ESCAPE;
+    keys[2] = TT_KEY_ENTER;
+    keys[3] = TT_KEY_UP;
+    keys[4] = (int)L'5';
+    keys[5] = (int)L'Y';
+    i = 0;
+    while (i < 6)
+    {
+        mk_flat3(&a);
+        a.selected = a.cur.procs[0].key;
+        keys_handle(&a, TT_KEY_F9);
+        TT_EQ_INT(a.confirm_open, 1);
+        TT_EQ_INT(keys_handle(&a, keys[i]), 1);
+        TT_EQ_INT(a.confirm_open, 0);
+        TT_EQ_INT(a.confirm_go, 0);
+        TT_CHECK(a.confirm_victims == NULL);
+        TT_EQ_INT((int)a.confirm_count, 0);
+        table_free(&a.cur);
+        i++;
+    }
+}
+
+/*
+** While the dialog is open, ordinary bindings must not fire at all -
+** confirm mode is exactly as exclusive as filter mode. Pressing 'q'
+** (normally quit) and an arrow key (normally move selection) while
+** a.confirm_open must both cancel the dialog and do NOTHING ELSE: a.running
+** stays 1, a.selected does not move. This is the same claim
+** test_all_ordinary_bindings_inert_in_filter_mode makes for filter mode,
+** generalised to confirm mode - a fix that only intercepted 'y' and let
+** every other key fall through to normal_key() would pass
+** test_confirm_every_non_y_key_cancels (confirm_open would still end up
+** 0, just via 'q' actually running first) without this.
+*/
+static void test_confirm_open_blocks_ordinary_bindings(void)
+{
+    t_app       a;
+    t_proc_key  before;
+
+    mk_flat3(&a);
+    a.selected = a.cur.procs[0].key;
+    before = a.selected;
+    keys_handle(&a, TT_KEY_F9);
+    TT_EQ_INT(keys_handle(&a, (int)L'q'), 1);
+    TT_EQ_INT(a.running, 1);               /* NOT quit */
+    TT_EQ_INT(a.confirm_open, 0);
+
+    mk_flat3(&a);
+    a.selected = a.cur.procs[0].key;
+    before = a.selected;
+    keys_handle(&a, TT_KEY_F9);
+    TT_EQ_INT(keys_handle(&a, TT_KEY_DOWN), 1);
+    TT_CHECK(key_eq(a.selected, before));  /* did NOT move */
+    TT_EQ_INT(a.confirm_open, 0);
+    table_free(&a.cur);
+}
+
+/*
+** A terminal resize while the dialog is open must not cancel it - resize
+** is a console signal, not a user decision about the pending kill (see
+** keys.c's own comment on why TT_KEY_RESIZE is checked before the
+** confirm dispatch). It still forces a redraw, same as always.
+*/
+static void test_resize_does_not_cancel_confirm(void)
+{
+    t_app   a;
+
+    mk_flat3(&a);
+    a.selected = a.cur.procs[0].key;
+    keys_handle(&a, TT_KEY_F9);
+    TT_EQ_INT(a.confirm_open, 1);
+    TT_EQ_INT(keys_handle(&a, TT_KEY_RESIZE), 1);
+    TT_EQ_INT(a.confirm_open, 1);
+    TT_EQ_INT(a.confirm_go, 0);
+    table_free(&a.cur);
+}
+
+/*
+** Filter mode must swallow F9/Shift+F9 exactly like every other ordinary
+** binding (test_all_ordinary_bindings_inert_in_filter_mode's own claim,
+** made explicit for the two keys this task adds): neither opens a
+** dialog, and - since both key codes sit above filter_key()'s printable
+** range - neither is appended to the filter text either.
+*/
+static void test_filter_mode_swallows_f9_and_shift_f9(void)
+{
+    t_app   a;
+
+    mk_flat3(&a);
+    a.selected = a.cur.procs[0].key;
+    keys_handle(&a, (int)L'/');
+    TT_EQ_INT(a.filter_mode, 1);
+    TT_EQ_INT(keys_handle(&a, TT_KEY_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
+    TT_EQ_INT(keys_handle(&a, TT_KEY_SHIFT_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
+    TT_EQ_WSTR(a.view.filter, L"");
+    table_free(&a.cur);
+}
+
+/*
+** F9 on a selection that has since died (the same "key not found" state
+** test_collapse_with_dead_selection_is_safe_noop exercises for collapse)
+** must not open a dialog - there is no live process to resolve
+** a->selected against, so table_find() returns NULL and
+** open_kill_confirm() bails out before allocating anything.
+*/
+static void test_f9_with_dead_selection_opens_nothing(void)
+{
+    t_app   a;
+
+    mk_flat3(&a);
+    a.selected = (t_proc_key){ .pid = 9999, .create_time = 1 };
+    TT_EQ_INT(keys_handle(&a, TT_KEY_F9), 0);
+    TT_EQ_INT(a.confirm_open, 0);
+    table_free(&a.cur);
+}
+
 void    test_keys(void)
 {
     test_down_moves_to_next_row_and_reports_redraw();
@@ -728,7 +1004,7 @@ void    test_keys(void)
     test_resize_always_forces_redraw();
 
     test_unknown_key_is_noop();
-    test_f9_is_not_implemented_yet();
+    test_f9_with_no_selection_opens_nothing();
 
     test_escape_outside_filter_mode_clears_kept_filter();
     test_escape_outside_filter_mode_with_empty_filter_is_noop();
@@ -743,4 +1019,14 @@ void    test_keys(void)
     test_enter_keeps_filter_and_exits_filter_mode();
     test_bindings_work_again_after_leaving_filter_mode();
     test_filter_buffer_cannot_overflow();
+
+    test_f9_opens_single_victim_confirm();
+    test_shift_f9_opens_subtree_confirm_deepest_first();
+    test_f9_and_shift_f9_refuse_pid0_and_pid4();
+    test_confirm_y_raises_confirm_go();
+    test_confirm_every_non_y_key_cancels();
+    test_confirm_open_blocks_ordinary_bindings();
+    test_resize_does_not_cancel_confirm();
+    test_filter_mode_swallows_f9_and_shift_f9();
+    test_f9_with_dead_selection_opens_nothing();
 }

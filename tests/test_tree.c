@@ -271,6 +271,155 @@ static void test_system_image_names(void)
     TT_EQ_INT(is_system_image(L""), 0);
 }
 
+/*                            SUBTREE COLLECTION                              */
+
+/*
+** Same shape as test_links' fixture: claude(100) -> node(200), pwsh(300);
+** node(200) -> rg(400). tree_flatten's own pre-order for this tree is
+** 100, 200, 400, 300 (see test_links). Post-order (deepest-first) must
+** instead put every descendant before its own parent: rg(400) before
+** node(200) - its only parent - and both node(200) and pwsh(300) before
+** claude(100) - their shared parent - with root claude(100) written
+** last of all four. This is the load-bearing assertion for Task 20:
+** a stub that reused tree_flatten's pre-order verbatim (parent, then
+** children) would pass a "same set of processes" check but fail this
+** exact ordering one, since 100 would appear first instead of last.
+*/
+static void test_subtree_collect_is_deepest_first(void)
+{
+    t_table     t;
+    t_process   p;
+    t_process   *rows[16];
+    size_t      n;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"claude.exe");  table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"node.exe");  table_add(&t, &p);
+    p = mk_proc(300, 3000, 100, L"pwsh.exe");  table_add(&t, &p);
+    p = mk_proc(400, 4000, 200, L"rg.exe");    table_add(&t, &p);
+    tree_build(&t);
+
+    n = tree_collect_subtree(&t.procs[0], rows, 16);
+    TT_EQ_INT((int)n, 4);
+    TT_EQ_INT((int)rows[0]->key.pid, 400);   /* rg: deepest, first */
+    TT_EQ_INT((int)rows[1]->key.pid, 200);   /* node: rg's own parent */
+    TT_EQ_INT((int)rows[2]->key.pid, 300);   /* pwsh: sibling of node */
+    TT_EQ_INT((int)rows[3]->key.pid, 100);   /* claude: root, last */
+    table_free(&t);
+}
+
+/*
+** Collecting from a non-root node (node, pid 200) must yield only ITS OWN
+** subtree - rg(400) then node(200) itself - never pwsh(300) (a sibling,
+** not a descendant) and never claude(100) (an ancestor, not a
+** descendant). This is what makes tree_collect_subtree usable for a
+** Shift+F9 issued on any selected row, not only a tree root.
+*/
+static void test_subtree_collect_from_non_root(void)
+{
+    t_table     t;
+    t_process   p;
+    t_process   *rows[16];
+    size_t      n;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"claude.exe");  table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"node.exe");  table_add(&t, &p);
+    p = mk_proc(300, 3000, 100, L"pwsh.exe");  table_add(&t, &p);
+    p = mk_proc(400, 4000, 200, L"rg.exe");    table_add(&t, &p);
+    tree_build(&t);
+
+    n = tree_collect_subtree(&t.procs[1], rows, 16);
+    TT_EQ_INT((int)n, 2);
+    TT_EQ_INT((int)rows[0]->key.pid, 400);
+    TT_EQ_INT((int)rows[1]->key.pid, 200);
+    table_free(&t);
+}
+
+/* A leaf with no children collects exactly itself: one entry, itself. */
+static void test_subtree_collect_leaf_is_itself(void)
+{
+    t_table     t;
+    t_process   p;
+    t_process   *rows[4];
+    size_t      n;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"claude.exe"); table_add(&t, &p);
+    tree_build(&t);
+
+    n = tree_collect_subtree(&t.procs[0], rows, 4);
+    TT_EQ_INT((int)n, 1);
+    TT_EQ_INT((int)rows[0]->key.pid, 100);
+    table_free(&t);
+}
+
+/*
+** collapsed must NOT hide anything from subtree collection, unlike
+** tree_flatten (see test_collapsed_hides_descendants above) - a
+** collapsed row's children are still very much alive and must still be
+** listed and killed. Same fixture as that test, collapsed flag set the
+** same way, but here asserting the OPPOSITE outcome: all three rows, not
+** one.
+*/
+static void test_subtree_collect_ignores_collapsed(void)
+{
+    t_table     t;
+    t_process   p;
+    t_process   *rows[16];
+    size_t      n;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"claude.exe"); table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"node.exe"); table_add(&t, &p);
+    p = mk_proc(300, 3000, 200, L"rg.exe");   table_add(&t, &p);
+    tree_build(&t);
+    t.procs[0].collapsed = 1;
+
+    n = tree_collect_subtree(&t.procs[0], rows, 16);
+    TT_EQ_INT((int)n, 3);
+    TT_EQ_INT((int)rows[0]->key.pid, 300);
+    TT_EQ_INT((int)rows[1]->key.pid, 200);
+    TT_EQ_INT((int)rows[2]->key.pid, 100);
+    table_free(&t);
+}
+
+/* NULL root: nothing to collect, must not crash. */
+static void test_subtree_collect_null_root_is_safe(void)
+{
+    t_process   *rows[4];
+    size_t      n;
+
+    rows[0] = NULL;
+    n = tree_collect_subtree(NULL, rows, 4);
+    TT_EQ_INT((int)n, 0);
+    TT_CHECK(rows[0] == NULL);
+}
+
+/* A buffer too small to hold the whole subtree: bounded, not overrun. */
+static void test_subtree_collect_respects_max(void)
+{
+    t_table     t;
+    t_process   p;
+    t_process   *rows[8];
+    size_t      n;
+    int         i;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"root.exe"); table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"a.exe");  table_add(&t, &p);
+    p = mk_proc(300, 3000, 200, L"b.exe");  table_add(&t, &p);
+    p = mk_proc(400, 4000, 300, L"c.exe");  table_add(&t, &p);
+    tree_build(&t);
+
+    for (i = 0; i < 8; i++)
+        rows[i] = NULL;
+    n = tree_collect_subtree(&t.procs[0], rows, 2);
+    TT_EQ_INT((int)n, 2);
+    TT_CHECK(rows[2] == NULL);
+    table_free(&t);
+}
+
 void    test_tree(void)
 {
     test_links();
@@ -285,4 +434,11 @@ void    test_tree(void)
     test_orphans();
     test_dev_runtime_names();
     test_system_image_names();
+
+    test_subtree_collect_is_deepest_first();
+    test_subtree_collect_from_non_root();
+    test_subtree_collect_leaf_is_itself();
+    test_subtree_collect_ignores_collapsed();
+    test_subtree_collect_null_root_is_safe();
+    test_subtree_collect_respects_max();
 }

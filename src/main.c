@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 /*
 ** plat_now() reports Windows FILETIME ticks (100 ns each), not
@@ -94,6 +95,71 @@ static unsigned int    wait_timeout_ms(unsigned long long next_sample_at,
 }
 
 /*
+** Services a->confirm_go: keys_handle() (src/input/keys.c, treetop_core)
+** raised it because the literal key 'y' was pressed while a kill
+** confirmation was open, but it could not call plat_kill() itself - that
+** symbol is declared in platform.h but only DEFINED in
+** src/platform/win_kill.c, which links into the treetop executable, not
+** treetop_core (treetop_tests never links it, which is also exactly why
+** plat_kill() cannot be unit-tested - see the brief). This is therefore
+** the one place in the whole codebase that actually calls it.
+**
+** a->confirm_victims is walked in the order it was collected -
+** tree_collect_subtree() (src/model/tree.c) already produced it
+** deepest-first for a subtree kill, so children are terminated before
+** the parent that might be waiting on them; a single F9 kill has exactly
+** one entry and order does not matter. Each victim is passed to
+** plat_kill() by KEY, not by any pointer or row this file holds - the
+** re-verification against a live handle's own creation time happens
+** entirely inside plat_kill(), immediately before TerminateProcess. This
+** function does not, and must not, attempt that check itself.
+**
+** Every victim is attempted even after an earlier one fails - a subtree
+** kill where one process is protected should still terminate the rest,
+** not abandon the whole operation on the first denial. denied takes
+** priority over gone in the footer message: "access denied" is
+** actionable (re-run elevated), "already exited" is not, so if both
+** happened this tick the actionable one is what the user needs to see.
+** Full success clears kill_status back to empty, which is what makes
+** draw_footer() (src/render/chrome.c) fall through to the ordinary key
+** bar again.
+*/
+static void execute_confirmed_kill(t_app *a)
+{
+    size_t  i;
+    int     rc;
+    int     denied;
+    int     gone;
+
+    denied = 0;
+    gone = 0;
+    i = 0;
+    while (i < a->confirm_count)
+    {
+        rc = plat_kill(a->confirm_victims[i]);
+        if (rc == -1)
+            denied = 1;
+        else if (rc == -2)
+            gone = 1;
+        i++;
+    }
+    if (denied)
+        wcsncpy(a->kill_status,
+                L"access denied - try running as administrator", 63);
+    else if (gone)
+        wcsncpy(a->kill_status, L"process already exited", 63);
+    else
+        a->kill_status[0] = L'\0';
+    a->kill_status[63] = L'\0';
+    free(a->confirm_victims);
+    a->confirm_victims = NULL;
+    a->confirm_count = 0;
+    a->confirm_open = 0;
+    a->confirm_subtree = 0;
+    a->confirm_go = 0;
+}
+
+/*
 ** The interactive event loop - the only function in this codebase
 ** allowed to call con_*, per the brief. Everything it does beyond that
 ** is delegate: keys_handle() (src/input/keys.c, treetop_core) owns every
@@ -160,6 +226,11 @@ static int  run_interactive(void)
             if (key == TT_KEY_RESIZE)
                 con_size(&cols, &rows);
             redraw |= keys_handle(&a, key);
+            if (a.confirm_go)
+            {
+                execute_confirmed_kill(&a);
+                redraw = 1;
+            }
         }
         now = plat_now();
         if (now >= next_sample_at && !a.paused)

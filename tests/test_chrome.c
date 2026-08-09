@@ -215,6 +215,85 @@ static void test_footer_filter_vs_keybar(void)
     frame_free(&f);
 }
 
+/*
+** Task 20: a->kill_status, once set (by src/main.c after a failed
+** plat_kill()), replaces the key bar with the failure text - the two
+** literal messages the brief names for -1 and -2. Checked with no active
+** filter, since draw_footer's own precedence puts the filter first;
+** test_footer_kill_status_vs_keybar_precedence right below covers that
+** ordering directly.
+*/
+static void test_footer_shows_kill_status(void)
+{
+    t_app   a;
+    t_frame f;
+
+    mk_app(&a);
+    wcscpy(a.kill_status, L"access denied - try running as administrator");
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_footer(&f, &a, 60);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"access denied") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"quit") == NULL);
+    frame_free(&f);
+
+    mk_app(&a);
+    wcscpy(a.kill_status, L"process already exited");
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_footer(&f, &a, 60);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"process already exited") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"quit") == NULL);
+    frame_free(&f);
+}
+
+/*
+** A live filter always wins over a stale kill_status - both being
+** non-empty at once is possible (the user filtered, killed something
+** earlier, then filtered again) and the filter is what needs to stay
+** editable. Proven by setting BOTH and checking only the filter's own
+** markers show.
+*/
+static void test_footer_kill_status_vs_filter_precedence(void)
+{
+    t_app   a;
+    t_frame f;
+
+    mk_app(&a);
+    wcscpy(a.kill_status, L"access denied - try running as administrator");
+    wcscpy(a.view.filter, L"needle");
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_footer(&f, &a, 60);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"needle") != NULL);
+    TT_CHECK(wcsstr(f.buf, TT_INVERT) != NULL);
+    TT_CHECK(wcsstr(f.buf, L"access denied") == NULL);
+    frame_free(&f);
+}
+
+/* Same width sweep test_footer_width_exact_at_every_col already runs for
+   the filter/keybar branches, extended to the new kill_status branch. */
+static void test_footer_kill_status_width_exact_at_every_col(void)
+{
+    t_app   a;
+    t_frame f;
+    int     widths[9] = { 120, 100, 79, 60, 40, 20, 10, 1, 0 };
+    int     i;
+
+    mk_app(&a);
+    wcscpy(a.kill_status, L"access denied - try running as administrator");
+    i = 0;
+    while (i < 9)
+    {
+        TT_EQ_INT(frame_init(&f, 4096), 0);
+        draw_footer(&f, &a, widths[i]);
+        f.buf[f.len] = L'\0';
+        for_each_line(f.buf, check_width_exact_cb, &widths[i]);
+        frame_free(&f);
+        i++;
+    }
+}
+
 /*                                    HELP                                    */
 
 static void test_help_width_exact_at_every_col(void)
@@ -344,6 +423,270 @@ static void test_help_refuses_below_minimum(void)
     f.buf[f.len] = L'\0';
     TT_CHECK(wcschr(f.buf, L'\u250c') == NULL);
     TT_EQ_INT((int)count_lines(f.buf), 2);
+    frame_free(&f);
+}
+
+/*                                  CONFIRM                                   */
+
+/*
+** N standalone processes (no tree relationship needed - draw_confirm()
+** just draws whatever t_process* array it is handed, in the order
+** given) with distinctive, greppable image names.
+*/
+static void mk_victims(t_table *t, t_process **rows, int n)
+{
+    t_process   p;
+    wchar_t     name[32];
+    int         i;
+
+    table_init(t, 8);
+    i = 0;
+    while (i < n)
+    {
+        swprintf(name, 32, L"victim%d.exe", i);
+        p = mk_proc((unsigned long)(500 + i), 5000 + (unsigned long long)i,
+                4, name);
+        table_add(t, &p);
+        i++;
+    }
+    for (i = 0; i < n; i++)
+        rows[i] = &t->procs[i];
+}
+
+/*
+** Every line draw_confirm() emits must be exactly `cols` visible
+** characters, at every width the brief calls out - the same sweep
+** test_help_width_exact_at_every_col already runs for draw_help(), and
+** the same defect class the brief warns three prior tasks shipped
+** ("Three tasks in a row shipped a defect here before it was caught").
+*/
+static void test_confirm_width_exact_at_every_col(void)
+{
+    t_table     t;
+    t_process   *rows[4];
+    t_frame     f;
+    int         widths[9] = { 120, 100, 79, 60, 40, 20, 10, 1, 0 };
+    int         i;
+
+    mk_victims(&t, rows, 3);
+    i = 0;
+    while (i < 9)
+    {
+        TT_EQ_INT(frame_init(&f, 16384), 0);
+        draw_confirm(&f, L"kill subtree - 3 processes?", rows, 3,
+                widths[i], 20);
+        f.buf[f.len] = L'\0';
+        for_each_line(f.buf, check_width_exact_cb, &widths[i]);
+        TT_EQ_INT((int)count_lines(f.buf), 20);
+        frame_free(&f);
+        i++;
+    }
+    table_free(&t);
+}
+
+/*
+** With ample room, the title, every victim's PID and image, and the
+** y/N prompt must all be present in the rendered box.
+*/
+static void test_confirm_lists_title_and_every_victim(void)
+{
+    t_table     t;
+    t_process   *rows[3];
+    t_frame     f;
+
+    mk_victims(&t, rows, 3);
+    TT_EQ_INT(frame_init(&f, 16384), 0);
+    draw_confirm(&f, L"kill subtree - 3 processes?", rows, 3, 100, 20);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"kill subtree - 3 processes?") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"victim0.exe") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"victim1.exe") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"victim2.exe") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"500") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"Terminate? [y/N]") != NULL);
+    frame_free(&f);
+    table_free(&t);
+}
+
+/*
+** More victims than fit in the available rows: the visible list is
+** bounded and the remainder collapses into a single "... and N more"
+** line, rather than either overflowing `rows` or silently vanishing.
+** rows=8 against 30 victims leaves room for only a handful of victim
+** lines (box_h capped at 8: 2 borders + title + prompt + up to 4 victim
+** slots, one of which becomes the "+more" line) - proven by checking an
+** early victim IS listed, a late one is NOT, and the "+more" text IS
+** present, while the total line count and every line's width still hold
+** exactly.
+*/
+static void test_confirm_degrades_with_more_indicator_when_rows_small(void)
+{
+    t_table     t;
+    t_process   *rows[30];
+    t_frame     f;
+
+    mk_victims(&t, rows, 30);
+    TT_EQ_INT(frame_init(&f, 16384), 0);
+    draw_confirm(&f, L"kill subtree - 30 processes?", rows, 30, 80, 8);
+    f.buf[f.len] = L'\0';
+    TT_EQ_INT((int)count_lines(f.buf), 8);
+    {
+        int cols = 80;
+        for_each_line(f.buf, check_width_exact_cb, &cols);
+    }
+    TT_CHECK(wcsstr(f.buf, L"kill subtree - 30 processes?") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"victim0.exe") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"victim29.exe") == NULL);
+    TT_CHECK(wcsstr(f.buf, L"more") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"Terminate? [y/N]") != NULL);
+    frame_free(&f);
+    table_free(&t);
+}
+
+/*
+** Ambiguity resolution #3 from the brief, verbatim: "If the confirmation
+** overlay cannot fit even one victim line, still show the count and the
+** y/N prompt - never a bare 'confirm?' with no idea what dies." rows=4
+** is the smallest box draw_confirm() will still draw at all (2 borders +
+** title + prompt, with ZERO room left for any victim or "+more" line);
+** the title here carries the count since draw_confirm() itself never
+** computes one - proving the caller-supplied count survives even though
+** every victim line is dropped.
+*/
+static void test_confirm_shows_title_and_prompt_with_zero_room_for_victims(void)
+{
+    t_table     t;
+    t_process   *rows[10];
+    t_frame     f;
+
+    mk_victims(&t, rows, 10);
+    TT_EQ_INT(frame_init(&f, 16384), 0);
+    draw_confirm(&f, L"kill subtree - 10 processes?", rows, 10, 80, 4);
+    f.buf[f.len] = L'\0';
+    TT_EQ_INT((int)count_lines(f.buf), 4);
+    TT_CHECK(wcsstr(f.buf, L"kill subtree - 10 processes?") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"Terminate? [y/N]") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"victim0.exe") == NULL);
+    {
+        int cols = 80;
+        for_each_line(f.buf, check_width_exact_cb, &cols);
+    }
+    frame_free(&f);
+    table_free(&t);
+}
+
+/*
+** Below the minimum viable box (cols < 5, or rows < 4 - one more than
+** draw_help()'s own rows < 3, since this box always reserves BOTH a
+** title and a prompt line, not just one guaranteed content row) the
+** overlay refuses to draw a box at all: blank lines only, still exactly
+** `rows` lines of exactly `cols` width. Checked on both axes
+** independently, mirroring test_help_refuses_below_minimum.
+*/
+static void test_confirm_refuses_below_minimum(void)
+{
+    t_table     t;
+    t_process   *rows[3];
+    t_frame     f;
+
+    mk_victims(&t, rows, 3);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_confirm(&f, L"kill process?", rows, 3, 4, 20);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcschr(f.buf, L'\u250c') == NULL);
+    TT_EQ_INT((int)count_lines(f.buf), 20);
+    {
+        int cols = 4;
+        for_each_line(f.buf, check_width_exact_cb, &cols);
+    }
+    frame_free(&f);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_confirm(&f, L"kill process?", rows, 3, 80, 3);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcschr(f.buf, L'\u250c') == NULL);
+    TT_EQ_INT((int)count_lines(f.buf), 3);
+    frame_free(&f);
+
+    table_free(&t);
+}
+
+/*
+** n == 0 (every confirmed victim has already exited by render time - see
+** render_all's own confirm_resolve_and_draw()) must not crash: the box
+** still draws with just the caller's title and the prompt.
+*/
+static void test_confirm_zero_victims_is_safe(void)
+{
+    t_frame f;
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_confirm(&f, L"kill subtree - 0 processes?", NULL, 0, 80, 20);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"kill subtree - 0 processes?") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"Terminate? [y/N]") != NULL);
+    TT_EQ_INT((int)count_lines(f.buf), 20);
+    frame_free(&f);
+}
+
+/*
+** A single F9 kill's title embeds the victim's own image name
+** (confirm_resolve_and_draw()'s "kill process %lu (%ls)?"), which can be
+** up to TT_IMAGE_LEN - 1 (63) characters - worst case a ~90-character
+** title. On a wide enough terminal (cols=200, comfortably past 90+4)
+** that whole title must render VERBATIM, not silently cut off: the
+** internal buffer draw_confirm()/overlay_trunc() share to build a
+** content row must be sized to hold it, not just the "typical" short
+** title every other test here happens to use. A too-small internal
+** buffer would truncate the tail of the image name without any ellipsis
+** marker (overlay_trunc's own "already fits" branch trusts the visible
+** width without checking destination buffer capacity), which is exactly
+** the class of defect three prior tasks shipped per the brief - this is
+** what makes that failure mode concrete for draw_confirm() specifically,
+** not just re-asserted for draw_help()'s already-short content lines.
+*/
+static void test_confirm_long_title_renders_in_full_on_wide_terminal(void)
+{
+    t_frame     f;
+    wchar_t     longname[64];
+    wchar_t     title[128];
+    int         i;
+
+    i = 0;
+    while (i < 63)
+    {
+        longname[i] = (wchar_t)(L'a' + (i % 26));
+        i++;
+    }
+    longname[63] = L'\0';
+    swprintf(title, 128, L"kill process 4294967295 (%ls)?", longname);
+    TT_CHECK((int)wcslen(title) >= 85);    /* sanity: this IS the worst case */
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_confirm(&f, title, NULL, 0, 200, 20);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, longname) != NULL);      /* full name present */
+    TT_CHECK(wcsstr(f.buf, L"4294967295") != NULL);
+    {
+        int cols = 200;
+        for_each_line(f.buf, check_width_exact_cb, &cols);
+    }
+    frame_free(&f);
+
+    /* Same title, narrow terminal: NOW it must truncate WITH an
+       ellipsis, proving the wide-terminal case above is a real "fits"
+       branch and not a coincidence of overlay_trunc always truncating
+       regardless. */
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_confirm(&f, title, NULL, 0, 50, 20);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, longname) == NULL);
+    TT_CHECK(wcsstr(f.buf, L"\u2026") != NULL);
+    {
+        int cols = 50;
+        for_each_line(f.buf, check_width_exact_cb, &cols);
+    }
     frame_free(&f);
 }
 
@@ -771,6 +1114,116 @@ static void test_render_all_selection_absent_key_no_crash(void)
     table_free(&a.prev);
 }
 
+/*                       RENDER_ALL CONFIRM OVERLAY                           */
+
+/*
+** While a->confirm_open, render_all() must draw ONLY the confirm
+** overlay - no header, meters, table row or footer key bar. Checked by
+** confirming a distinctive marker from EACH of those four sections is
+** absent (a render_all that forgot the early return would still compose
+** them underneath, invisible on a real terminal thanks to the leading
+** home-and-erase but very much present in the buffer this test reads)
+** while the overlay's own content - the prompt, at minimum - is present.
+*/
+static void test_render_all_confirm_open_shows_overlay_not_normal_content(void)
+{
+    t_app       a;
+    t_process   p;
+    t_frame     f;
+    t_proc_key  victims[1];
+
+    mk_app(&a);
+    TT_EQ_INT(table_init(&a.cur, 8), 0);
+    TT_EQ_INT(table_init(&a.prev, 8), 0);
+    view_init(&a.view);
+    p = mk_proc(100, 1000, 4, L"zzztargetproc.exe");
+    table_add(&a.cur, &p);
+    tree_build(&a.cur);
+    a.sys.core_count = 4;
+
+    victims[0] = a.cur.procs[0].key;
+    a.confirm_open = 1;
+    a.confirm_subtree = 0;
+    a.confirm_victims = victims;
+    a.confirm_count = 1;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, 120, 30, 0);
+    f.buf[f.len] = L'\0';
+
+    TT_CHECK(wcsstr(f.buf, L"CPU") == NULL);           /* meters absent */
+    TT_CHECK(wcsstr(f.buf, L"quit") == NULL);           /* key bar absent */
+    TT_CHECK(wcsstr(f.buf, L"procs") == NULL);          /* header absent */
+    TT_CHECK(wcsstr(f.buf, L"Terminate? [y/N]") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"zzztargetproc.exe") != NULL);
+
+    /* Home-and-erase still opens the frame even in overlay mode. */
+    TT_CHECK(wcsncmp(f.buf, L"\x1b[H\x1b[2J", 7) == 0);
+
+    a.confirm_victims = NULL;      /* stack array - do not free() it */
+    frame_free(&f);
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
+/*
+** MANDATORY per the brief: "a victim whose key no longer resolves is
+** skipped, not killed by PID." This is the portable half of that
+** property - the actual kill-time identity guard lives in plat_kill()
+** and cannot be unit-tested (see the brief), but render_all() re-
+** resolving every confirmed key against the LIVE a->cur, every frame, is
+** what keeps the dialog from ever claiming a process is "about to die"
+** once it no longer exists. Proven by rendering the SAME confirm state
+** twice: once while the victim is still in a->cur (its image name shows
+** up), and once after table_clear() removes it (the same key now
+** resolves to nothing, so the image name is gone) - a render_all that
+** cached the resolved pointer from the first call, or that resolved by
+** stale row index instead of by key, would still show it the second
+** time.
+*/
+static void test_render_all_confirm_resolves_victim_against_live_table(void)
+{
+    t_app       a;
+    t_process   p;
+    t_frame     f;
+    t_proc_key  victims[1];
+
+    mk_app(&a);
+    TT_EQ_INT(table_init(&a.cur, 8), 0);
+    TT_EQ_INT(table_init(&a.prev, 8), 0);
+    view_init(&a.view);
+    p = mk_proc(100, 1000, 4, L"livevictim.exe");
+    table_add(&a.cur, &p);
+    tree_build(&a.cur);
+
+    victims[0] = a.cur.procs[0].key;
+    a.confirm_open = 1;
+    a.confirm_subtree = 0;
+    a.confirm_victims = victims;
+    a.confirm_count = 1;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, 120, 30, 0);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"livevictim.exe") != NULL);
+    frame_free(&f);
+
+    /* The confirmed process is gone from the live table now - same key,
+       nothing to resolve it to. */
+    table_clear(&a.cur);
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, 120, 30, 0);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"livevictim.exe") == NULL);
+    TT_CHECK(wcsstr(f.buf, L"Terminate? [y/N]") != NULL);   /* box still up */
+    frame_free(&f);
+
+    a.confirm_victims = NULL;
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
 void    test_chrome(void)
 {
     test_header_width_exact_at_every_col();
@@ -778,11 +1231,21 @@ void    test_chrome(void)
     test_header_shows_ratio_when_narrowed();
     test_footer_width_exact_at_every_col();
     test_footer_filter_vs_keybar();
+    test_footer_shows_kill_status();
+    test_footer_kill_status_vs_filter_precedence();
+    test_footer_kill_status_width_exact_at_every_col();
     test_help_width_exact_at_every_col();
     test_help_lists_every_binding();
     test_help_degrades_when_rows_too_small();
     test_help_degrades_when_cols_too_small();
     test_help_refuses_below_minimum();
+    test_confirm_width_exact_at_every_col();
+    test_confirm_lists_title_and_every_victim();
+    test_confirm_degrades_with_more_indicator_when_rows_small();
+    test_confirm_shows_title_and_prompt_with_zero_room_for_victims();
+    test_confirm_refuses_below_minimum();
+    test_confirm_zero_victims_is_safe();
+    test_confirm_long_title_renders_in_full_on_wide_terminal();
     test_render_all_order_and_line_budget();
     test_render_all_first_line_width();
     test_render_all_rows_never_exceed_budget();
@@ -790,4 +1253,6 @@ void    test_chrome(void)
     test_render_all_selection_centers_in_middle();
     test_render_all_selection_clamped_full_last_page();
     test_render_all_selection_absent_key_no_crash();
+    test_render_all_confirm_open_shows_overlay_not_normal_content();
+    test_render_all_confirm_resolves_victim_against_live_table();
 }

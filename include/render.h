@@ -106,5 +106,29 @@ void        draw_header(t_frame *f, const t_app *a, int cols, int limited,
                 size_t visible_count);
 void        draw_footer(t_frame *f, const t_app *a, int cols);
 void        draw_help(t_frame *f, int cols, int rows);
+
+/*
+** The Task 20 kill confirmation overlay: `title` is caller-composed
+** (e.g. "kill process 1234 (notepad.exe)?" or "kill subtree - 3
+** processes?" - see render_all's own confirm_resolve_and_draw()) and is
+** always shown in full if the box can be drawn at all, together with the
+** "Terminate? [y/N]" prompt, even when there is no room for a single
+** victim line - see the brief's own ambiguity resolution #3. `victims`
+** lists whichever of the confirmed keys still resolve against the
+** CURRENT table (render_all re-resolves every frame; a victim that has
+** since exited simply is not in this array, it is never drawn as "about
+** to die" once it no longer exists). `n` victim lines are shown in the
+** order given - the caller is responsible for that being deepest-first
+** for a subtree kill - up to however many the box has room for; the rest
+** collapse into a single "... and N more" line rather than being
+** silently dropped, so the count in the title is never a lie about what
+** the visible rows show. Below the same minimum viable box size
+** draw_help() uses (cols < 5 or rows < 4 here - one extra row versus
+** draw_help's 3, since title AND prompt both need a guaranteed line) this
+** draws `rows` blank lines of `cols` spaces instead, exactly like
+** draw_help()'s own "a malformed box is worse than no box" rule.
+*/
+void        draw_confirm(t_frame *f, const wchar_t *title,
+                t_process **victims, size_t n, int cols, int rows);
 void        render_all(t_frame *f, t_app *a, int cols, int rows,
                 int limited);

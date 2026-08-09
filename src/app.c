@@ -200,6 +200,18 @@ void    app_sample(t_app *a)
 
 void    app_free(t_app *a)
 {
+    /*
+    ** Normally freed by keys_handle()'s close_confirm() (cancel) or
+    ** src/main.c's execute_confirmed_kill() ('y') before app_free() ever
+    ** runs - the interactive loop cannot reach a->running == 0 while a
+    ** confirmation dialog is open, since it swallows every key including
+    ** 'q'. This is here purely as a second line of defence for any exit
+    ** path that skips that loop (Ctrl+C's own handler shuts the console
+    ** down directly - see console.h), so a dialog left open can never
+    ** leak its victim list.
+    */
+    free(a->confirm_victims);
+    a->confirm_victims = NULL;
     table_free(&a->cur);
     table_free(&a->prev);
     plat_shutdown();
