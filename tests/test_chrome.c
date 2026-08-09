@@ -154,6 +154,64 @@ static void test_header_shows_ratio_when_narrowed(void)
     frame_free(&f);
 }
 
+/*
+** Code review finding: src/main.c's event loop skips app_sample() while
+** a->paused (by design - that is what 'p' is for), which freezes the
+** clock draw_header itself prints. With nothing else on screen saying so,
+** a paused treetop is indistinguishable from a hung one. Checked both
+** directions so a stub permanently showing (or never showing) PAUSED is
+** caught either way.
+*/
+static void test_header_shows_paused_marker(void)
+{
+    t_app   a;
+    t_frame f;
+
+    mk_app(&a);
+    a.paused = 1;
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_header(&f, &a, 120, 0, a.cur.count);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"PAUSED") != NULL);
+    frame_free(&f);
+
+    mk_app(&a);
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_header(&f, &a, 120, 0, a.cur.count);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"PAUSED") == NULL);
+    frame_free(&f);
+}
+
+/*
+** Code review finding: '+'/'-' changed a->refresh_ms with no on-screen
+** confirmation anywhere - the only symptom was the clock quietly ticking
+** at a different cadence, which nobody notices in the moment. Checked at
+** both ends of the ms/s formatting split (< 1000 ms shows "Nms", >= 1000
+** ms shows "N.Ns") so a stub hard-coded to one unit is caught.
+*/
+static void test_header_shows_refresh_interval(void)
+{
+    t_app   a;
+    t_frame f;
+
+    mk_app(&a);
+    a.refresh_ms = 250;
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_header(&f, &a, 120, 0, a.cur.count);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"250ms") != NULL);
+    frame_free(&f);
+
+    mk_app(&a);
+    a.refresh_ms = 5000;
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_header(&f, &a, 120, 0, a.cur.count);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"5.0s") != NULL);
+    frame_free(&f);
+}
+
 /*                                   FOOTER                                   */
 
 static void test_footer_width_exact_at_every_col(void)
@@ -186,16 +244,18 @@ static void test_footer_width_exact_at_every_col(void)
 }
 
 /*
-** The footer shows the key bar when no filter is active, and the "/"
-** prompt with the live filter text and a cursor when one is. Checked
-** both directions so a stub permanently stuck in either state is caught.
+** The footer shows the key bar when nothing else is going on, and the
+** "/" prompt with the live filter text and a cursor while a->filter_mode
+** is actively set. Checked both directions so a stub permanently stuck in
+** either state is caught.
 */
-static void test_footer_filter_vs_keybar(void)
+static void test_footer_filter_mode_vs_keybar(void)
 {
     t_app   a;
     t_frame f;
 
     mk_app(&a);
+    a.filter_mode = 1;
     wcscpy(a.view.filter, L"zzqueryXYZ");
     TT_EQ_INT(frame_init(&f, 4096), 0);
     draw_footer(&f, &a, 60);
@@ -212,6 +272,68 @@ static void test_footer_filter_vs_keybar(void)
     TT_CHECK(wcsstr(f.buf, L"quit") != NULL);
     TT_CHECK(wcsstr(f.buf, L"help") != NULL);
     TT_CHECK(wcsstr(f.buf, TT_INVERT) == NULL);
+    frame_free(&f);
+}
+
+/*
+** Code review finding: this used to be gated on a->view.filter being
+** non-empty, not on a->filter_mode - so pressing '/' on an EMPTY filter
+** changed no pixel at all (filter[0] was '\0' before and after), leaving
+** a user who then typed ordinary letters with no visible sign any of it
+** was going into a filter instead of triggering bindings. Proven directly
+** here: entering filter_mode with nothing typed yet must render
+** differently from the plain key bar - a cursor has to appear from
+** somewhere - not compare byte-identical to it.
+*/
+static void test_footer_empty_filter_mode_differs_from_keybar(void)
+{
+    t_app   a_keybar;
+    t_app   a_editing;
+    t_frame f_keybar;
+    t_frame f_editing;
+
+    mk_app(&a_keybar);
+    mk_app(&a_editing);
+    a_editing.filter_mode = 1;
+
+    TT_EQ_INT(frame_init(&f_keybar, 4096), 0);
+    draw_footer(&f_keybar, &a_keybar, 60);
+    f_keybar.buf[f_keybar.len] = L'\0';
+
+    TT_EQ_INT(frame_init(&f_editing, 4096), 0);
+    draw_footer(&f_editing, &a_editing, 60);
+    f_editing.buf[f_editing.len] = L'\0';
+
+    TT_CHECK(wcscmp(f_keybar.buf, f_editing.buf) != 0);
+    TT_CHECK(wcsstr(f_editing.buf, TT_INVERT) != NULL);
+
+    frame_free(&f_keybar);
+    frame_free(&f_editing);
+}
+
+/*
+** Code review finding: a filter that is SET but no longer being edited
+** (Enter already pressed, a->filter_mode back to 0) used to keep showing
+** the editing prompt - cursor included - forever, claiming the user was
+** still typing when ordinary bindings had already resumed underneath.
+** Now it gets a plain, cursor-free readout instead: the filter text is
+** still visible (so a narrowed table is never unexplained) but neither
+** the cursor nor the ordinary key bar shows up at the same time.
+*/
+static void test_footer_filter_set_not_editing_shows_indicator(void)
+{
+    t_app   a;
+    t_frame f;
+
+    mk_app(&a);
+    wcscpy(a.view.filter, L"needle");
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_footer(&f, &a, 60);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"needle") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"Esc") != NULL);
+    TT_CHECK(wcsstr(f.buf, TT_INVERT) == NULL);
+    TT_CHECK(wcsstr(f.buf, L"quit") == NULL);
     frame_free(&f);
 }
 
@@ -248,19 +370,53 @@ static void test_footer_shows_kill_status(void)
 }
 
 /*
-** A live filter always wins over a stale kill_status - both being
-** non-empty at once is possible (the user filtered, killed something
-** earlier, then filtered again) and the filter is what needs to stay
-** editable. Proven by setting BOTH and checking only the filter's own
-** markers show.
+** Code review finding: a non-empty a->view.filter used to mask
+** a->kill_status permanently, for as long as the filter stayed set -
+** which on the filter -> F9 -> y -> denied workflow the README's own
+** screenshot demonstrates, silently swallowed "access denied - try
+** running as administrator" for the rest of the session. Filtering to
+** find the process to kill is not, and must never be, a way to lose the
+** one message telling the user to re-run elevated. kill_status now wins
+** over a SET-BUT-NOT-EDITING filter: proven by setting both (with
+** filter_mode left at its default 0, matching how kill_status can only
+** ever become non-empty in the first place - see keys.c) and checking
+** only the kill message's own markers show.
 */
-static void test_footer_kill_status_vs_filter_precedence(void)
+static void test_footer_kill_status_visible_while_filter_set(void)
 {
     t_app   a;
     t_frame f;
 
     mk_app(&a);
     wcscpy(a.kill_status, L"access denied - try running as administrator");
+    wcscpy(a.view.filter, L"needle");
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_footer(&f, &a, 60);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"access denied") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"needle") == NULL);
+    TT_CHECK(wcsstr(f.buf, TT_INVERT) == NULL);
+    frame_free(&f);
+}
+
+/*
+** Actively editing the filter (a->filter_mode) still wins outright over a
+** stale kill_status - the user's own live keystrokes need to stay visible
+** and editable no matter what happened on the previous kill attempt.
+** keys_handle() itself can never reach this exact combination in practice
+** (open_kill_confirm() is unreachable while filter_mode is set - see
+** app.h), but draw_footer() must still resolve it deterministically
+** rather than leaving the ordering to whichever branch happens to be
+** checked first.
+*/
+static void test_footer_filter_mode_wins_over_kill_status(void)
+{
+    t_app   a;
+    t_frame f;
+
+    mk_app(&a);
+    wcscpy(a.kill_status, L"access denied - try running as administrator");
+    a.filter_mode = 1;
     wcscpy(a.view.filter, L"needle");
     TT_EQ_INT(frame_init(&f, 4096), 0);
     draw_footer(&f, &a, 60);
@@ -954,7 +1110,10 @@ static void test_render_all_rows_never_exceed_budget(void)
     render_all(&f, &a, 120, 3, 0);
     f.buf[f.len] = L'\0';
     TT_EQ_INT((int)count_lines(f.buf), 3);
-    TT_CHECK(wcsstr(f.buf, L"CPU") == NULL);
+    /* "CPU [" (draw_gauge's own label-plus-bracket) is meters-specific -
+       the column header's "CPU%" carries no bracket, so this still proves
+       meters were dropped without the two being confused for each other. */
+    TT_CHECK(wcsstr(f.buf, L"CPU [") == NULL);
     frame_free(&f);
 
     table_free(&a.cur);
@@ -1032,12 +1191,12 @@ static int  line_invert_state(const wchar_t *buf, const wchar_t *needle)
 }
 
 /*
-** cols=120 (meter_lines=3) and rows=13 -> footer(1) + header(1) +
-** meters(3) + table(8) = 13 exactly, a known, deterministic 8-row
-** window against 20 total rows.
+** cols=120 (meter_lines=3) and rows=14 -> footer(1) + header(1) +
+** meters(3) + column header(1) + table(8) = 14 exactly, a known,
+** deterministic 8-row window against 20 total rows.
 */
 #define TT_SEL_TEST_COLS   120
-#define TT_SEL_TEST_ROWS   13
+#define TT_SEL_TEST_ROWS   14
 
 /*
 ** Selecting the very first row must not scroll at all: centering would
@@ -1107,9 +1266,9 @@ static void test_render_all_selection_centers_in_middle(void)
 ** unclamped centre (top = 19 - 4 = 15) would only have 5 rows left
 ** (indices 15..19) to show against an 8-row window. The actual clamp
 ** (top = nrows - window = 20 - 8 = 12) keeps the window full - proven
-** both by an exact line-count check (header+meters+footer+8 table rows
-** == 13, the full budget, not fewer) and by checking the window starts
-** exactly at tag112, not tag111 or tag115.
+** both by an exact line-count check (header+meters+column header+
+** footer+8 table rows == 14, the full budget, not fewer) and by checking
+** the window starts exactly at tag112, not tag111 or tag115.
 */
 static void test_render_all_selection_clamped_full_last_page(void)
 {
@@ -1288,9 +1447,10 @@ static void test_render_all_confirm_resolves_victim_against_live_table(void)
 ** nothing observable at all. Wired the same way the confirm overlay
 ** above already proves out: render_all() must show ONLY the help box
 ** while a->help_open, displacing header/meters/table/footer entirely -
-** proven the same way test_render_all_confirm_open_shows_overlay_not_normal_content
-** proves it for the confirm overlay, by checking a marker unique to each
-** displaced section is absent while a help-specific marker is present.
+** proven the same way test_render_all_confirm_open_shows_overlay_not_
+** normal_content proves it for the confirm overlay, by checking a marker
+** unique to each displaced section is absent while a help-specific marker
+** is present.
 */
 static void test_render_all_help_open_shows_overlay_not_normal_content(void)
 {
@@ -1374,10 +1534,15 @@ void    test_chrome(void)
     test_header_width_exact_at_every_col();
     test_header_limited_marker_and_count();
     test_header_shows_ratio_when_narrowed();
+    test_header_shows_paused_marker();
+    test_header_shows_refresh_interval();
     test_footer_width_exact_at_every_col();
-    test_footer_filter_vs_keybar();
+    test_footer_filter_mode_vs_keybar();
+    test_footer_empty_filter_mode_differs_from_keybar();
+    test_footer_filter_set_not_editing_shows_indicator();
     test_footer_shows_kill_status();
-    test_footer_kill_status_vs_filter_precedence();
+    test_footer_kill_status_visible_while_filter_set();
+    test_footer_filter_mode_wins_over_kill_status();
     test_footer_kill_status_width_exact_at_every_col();
     test_help_width_exact_at_every_col();
     test_help_lists_every_binding();

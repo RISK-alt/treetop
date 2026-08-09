@@ -74,6 +74,18 @@ void        draw_meters(t_frame *f, const t_sysinfo *sys, int cols);
 void        draw_table(t_frame *f, t_process **rows, size_t n, size_t sel,
                 int top, int cols, int rows_avail, const t_view *v);
 
+/*
+** One line labelling draw_table's own columns (PID, CPU%, MEM, PORTS,
+** COMMAND) at the same fixed widths draw_row itself uses, with a small
+** triangle marking whichever column `sort` currently names and pointing
+** the way `sort_desc` does - the only on-screen indication of which of
+** F6/</>'s four sort orders is active. Lives in src/render/table.c,
+** beside draw_row/draw_table, since it shares their column-width
+** constants directly.
+*/
+void        draw_table_header(t_frame *f, int cols, t_sort_mode sort,
+                int sort_desc);
+
 /*                                   CHROME                                   */
 
 /*

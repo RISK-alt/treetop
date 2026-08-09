@@ -581,6 +581,69 @@ static void test_collapsed_agent_root_children_count(void)
 }
 
 /*
+** Code review finding: tree_build()'s aggregate() pass has always rolled
+** a whole subtree's CPU and memory onto its root (subtree_cpu,
+** subtree_mem), and json.c's session entries have always read them - but
+** no renderer ever did, so collapsing a busy agent root hid its children
+** AND the load they were generating, leaving only the root's own
+** idle-looking numbers on screen. Built off a REAL tree (table_add +
+** tree_build), like test_collapsed_agent_root_children_count above,
+** rather than hand-set aggregate fields, so this proves the wiring, not
+** just that draw_row reads whatever field it is told to.
+*/
+static void test_collapsed_row_shows_subtree_cpu_and_mem(void)
+{
+    t_table     t;
+    t_process   p;
+    t_process   *root;
+    t_process   *rows[1];
+    t_frame     f;
+    t_view      v;
+
+    table_init(&t, 8);
+    p = mk_proc(100, 1000, 4, L"claude.exe");
+    p.cpu_pct = 1.0;
+    p.working_set = 1000;
+    table_add(&t, &p);
+    p = mk_proc(200, 2000, 100, L"node.exe");
+    p.cpu_pct = 50.0;
+    p.working_set = 2000000;
+    table_add(&t, &p);
+    tree_build(&t);
+
+    root = table_find_pid(&t, 100);
+    TT_EQ_DBL(root->subtree_cpu, 51.0, 0.01);
+    TT_EQ_INT((int)root->subtree_mem, 2001000);
+
+    rows[0] = root;
+    view_init(&v);
+
+    /* Collapsed: the CPU%/MEM cells show the SUBTREE figures - collapsing
+       must not hide the load its children were generating. */
+    root->collapsed = 1;
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table(&f, rows, 1, (size_t)-1, 0, 100, 1, &v);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L" 51.0%") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"  1.9M") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"  1.0%") == NULL);
+    frame_free(&f);
+
+    /* Expanded: the row keeps showing its OWN figures - its children are
+       already visible on their own rows right below it. */
+    root->collapsed = 0;
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table(&f, rows, 1, (size_t)-1, 0, 100, 1, &v);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"  1.0%") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"  1000") != NULL);
+    TT_CHECK(wcsstr(f.buf, L" 51.0%") == NULL);
+    frame_free(&f);
+
+    table_free(&t);
+}
+
+/*
 ** top and rows_avail must genuinely window the array: drawing a single
 ** row starting at top=1 out of 3 must show ONLY the middle row. A test
 ** that always passes top=0 (drawing everything) could never catch an
@@ -681,6 +744,89 @@ static void test_long_ports_list_bounded(void)
     frame_free(&f);
 }
 
+/*                              COLUMN HEADER                                 */
+
+/*
+** Code review finding: design SS9's "PID CPU% MEM PORTS COMMAND" header
+** row was never implemented - the screenshot's PORTS column renders a
+** bare port number with nothing on screen saying what it is, and F6/</>'s
+** four sort orders had no visible indication of which one was active.
+** draw_table_header() (src/render/table.c) fixes both; this suite proves
+** it independently of draw_table() and render_all(), the same way
+** draw_row's own column widths are proven in isolation above.
+*/
+static void test_column_header_width_exact_at_every_col(void)
+{
+    t_frame f;
+    int     widths[9] = { 120, 100, 79, 60, 40, 20, 10, 1, 0 };
+    int     i;
+
+    i = 0;
+    while (i < 9)
+    {
+        TT_EQ_INT(frame_init(&f, 4096), 0);
+        draw_table_header(&f, widths[i], SORT_CPU, 1);
+        f.buf[f.len] = L'\0';
+        TT_EQ_INT((int)visible_len(f.buf), widths[i]);
+        frame_free(&f);
+        i++;
+    }
+}
+
+/*
+** Every column draw_row itself draws gets a label on a wide enough
+** terminal; PORTS follows the exact same show_ports (cols >= 80) gate
+** test_ports_merge_below_80 already proves for data rows, so the header
+** never names a column that is not actually present on the line below it.
+*/
+static void test_column_header_labels_and_ports_gate(void)
+{
+    t_frame f;
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table_header(&f, 100, SORT_PID, 0);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"PID") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"CPU%") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"MEM") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"PORTS") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"COMMAND") != NULL);
+    frame_free(&f);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table_header(&f, 79, SORT_PID, 0);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"PORTS") == NULL);
+    frame_free(&f);
+}
+
+/*
+** The active sort column (view->sort, cycled by F6/</>) carries a small
+** triangle pointing the current direction - the only on-screen trace of
+** which of the four sort orders is live. Checked on a non-PID, non-CPU%
+** column (MEM) so a stub that always marks the first field it happens to
+** draw is caught, and in both directions so a stub stuck on one arrow
+** glyph is too.
+*/
+static void test_column_header_marks_active_sort_column(void)
+{
+    t_frame f;
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table_header(&f, 100, SORT_MEM, 1);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"MEM\u25bc") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"PID\u25bc") == NULL);
+    TT_CHECK(wcsstr(f.buf, L"CPU%\u25bc") == NULL);
+    frame_free(&f);
+
+    TT_EQ_INT(frame_init(&f, 4096), 0);
+    draw_table_header(&f, 100, SORT_MEM, 0);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, L"MEM\u25b2") != NULL);
+    frame_free(&f);
+}
+
 void    test_draw_table(void)
 {
     test_width_exact_at_every_col();
@@ -694,7 +840,11 @@ void    test_draw_table(void)
     test_orphan_and_agent_root_combined();
     test_null_cmdline_fallback();
     test_collapsed_agent_root_children_count();
+    test_collapsed_row_shows_subtree_cpu_and_mem();
     test_scroll_window();
     test_flat_mode_suppresses_tree_glyphs();
     test_long_ports_list_bounded();
+    test_column_header_width_exact_at_every_col();
+    test_column_header_labels_and_ports_gate();
+    test_column_header_marks_active_sort_column();
 }

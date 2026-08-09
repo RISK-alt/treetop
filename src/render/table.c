@@ -43,12 +43,22 @@
 
 /*                                  HELPERS                                   */
 
+/*
+** Individual p->cpu_pct is already capped at 100.0 by delta_apply(), but
+** p->subtree_cpu (the sum of a whole subtree's already-capped figures,
+** shown here in place of a collapsed root's own - see draw_row below) can
+** legitimately run well past that on a multi-process, multi-core-busy
+** tree, and must still fit the fixed 6-column CPU% cell.  999.9 is the
+** largest value "%5.1f" ever prints in exactly 5 characters - one more
+** digit would overflow the field and break the "every line is exactly
+** cols wide" invariant - so that, not 100.0, is the real display bound.
+*/
 static double   clamp_pct(double pct)
 {
     if (pct < 0.0)
         return (0.0);
-    if (pct > 100.0)
-        return (100.0);
+    if (pct > 999.9)
+        return (999.9);
     return (pct);
 }
 
@@ -264,6 +274,18 @@ static int  draw_command_cell(t_frame *f, const t_process *p, int avail,
 ** nothing - and the line is padded out to `cols` regardless, so the
 ** total width invariant holds independently of how many columns a
 ** narrow terminal actually got to see.
+**
+** CPU% and MEM read p->subtree_cpu/p->subtree_mem instead of p's own
+** cpu_pct/working_set whenever p->collapsed - tree_build()'s aggregate()
+** pass (src/model/tree.c) already rolls a whole subtree's figures onto
+** its root, but until this was wired in here nothing ever displayed them:
+** collapsing a busy root hid its children AND the CPU/memory they were
+** using, showing only the root's own idle-looking numbers, which is
+** backwards from what collapsing a subtree view is for. An uncollapsed
+** row keeps showing its own figures exactly as before - subtree_cpu/
+** subtree_mem still exist on it (aggregate() computes them for every
+** node, not just collapsed ones) but a row already showing its children
+** individually has no reason to also fold their totals into its own.
 */
 static void draw_row(t_frame *f, const t_process *p, int cols, int sel,
                      int show_ports, int show_tree, int is_last)
@@ -295,7 +317,7 @@ static void draw_row(t_frame *f, const t_process *p, int cols, int sel,
     }
     if (avail >= 6)
     {
-        pct = clamp_pct(p->cpu_pct);
+        pct = clamp_pct(p->collapsed ? p->subtree_cpu : p->cpu_pct);
         swprintf(buf, 32, L"%5.1f%%", pct);
         if (!sel)
         {
@@ -318,7 +340,7 @@ static void draw_row(t_frame *f, const t_process *p, int cols, int sel,
     }
     if (avail >= 6)
     {
-        fmt_bytes(p->working_set, membuf, 16);
+        fmt_bytes(p->collapsed ? p->subtree_mem : p->working_set, membuf, 16);
         frame_printf(f, L"%6.6ls", membuf);
         avail -= 6;
         content += 6;
@@ -348,6 +370,132 @@ static void draw_row(t_frame *f, const t_process *p, int cols, int sel,
         frame_pad(f, cols - content);
     if (sel)
         frame_puts(f, TT_RESET);
+}
+
+/*                                  HEADER                                    */
+
+/*
+** One field of the column header row: `label`, with a small arrow glyph
+** appended (pointing the way sort_desc does) when this is the column
+** view->sort currently names, then justified into `width` cells - right
+** for the three numeric columns, left for PORTS, so each lines up with
+** draw_row's own alignment for that column. Bounded to a 15-character
+** label plus a 1-cell arrow, comfortably above anything this file ever
+** actually calls it with ("CPU%" is the longest).
+*/
+static void header_field(t_frame *f, const wchar_t *label, int width,
+                        int right_align, int active, int desc)
+{
+    wchar_t text[16];
+    wchar_t out[24];
+    size_t  len;
+
+    wcsncpy(text, label, 15);
+    text[15] = L'\0';
+    if (active)
+    {
+        len = wcslen(text);
+        if (len + 1 < 16)
+        {
+            text[len] = desc ? L'\u25bc' : L'\u25b2';
+            text[len + 1] = L'\0';
+        }
+    }
+    if (right_align)
+        swprintf(out, 24, L"%*ls", width, text);
+    else
+        swprintf(out, 24, L"%-*ls", width, text);
+    frame_puts(f, out);
+}
+
+/*
+** Labels every column draw_row itself draws, in the same order and at the
+** same fixed widths, so header text and row data always line up - PID,
+** CPU%, MEM and (above 80 columns) PORTS right where their numbers sit,
+** COMMAND after the same one-column gutter draw_command_cell reserves for
+** the orphan/collapse marker. The active sort column (view->sort, cycled
+** by F6/</>) carries a small triangle pointing the current direction;
+** PORTS is never a sort column (there is no SORT_PORTS in t_sort_mode) so
+** it never carries one. Follows draw_row's own "each fixed field only if
+** the FULL width still fits, then pad the remainder" discipline, so this
+** obeys the same exact-cols width invariant every other rendered line
+** does.
+*/
+void    draw_table_header(t_frame *f, int cols, t_sort_mode sort,
+                        int sort_desc)
+{
+    int     avail;
+    int     content;
+    int     show_ports;
+    int     cmd_len;
+
+    avail = cols;
+    content = 0;
+    show_ports = (cols >= 80);
+    if (avail >= 7)
+    {
+        header_field(f, L"PID", 7, 1, sort == SORT_PID, sort_desc);
+        avail -= 7;
+        content += 7;
+        if (avail >= 1)
+        {
+            frame_puts(f, L" ");
+            avail -= 1;
+            content += 1;
+        }
+    }
+    if (avail >= 6)
+    {
+        header_field(f, L"CPU%", 6, 1, sort == SORT_CPU, sort_desc);
+        avail -= 6;
+        content += 6;
+        if (avail >= 1)
+        {
+            frame_puts(f, L" ");
+            avail -= 1;
+            content += 1;
+        }
+    }
+    if (avail >= 6)
+    {
+        header_field(f, L"MEM", 6, 1, sort == SORT_MEM, sort_desc);
+        avail -= 6;
+        content += 6;
+        if (avail >= 1)
+        {
+            frame_puts(f, L" ");
+            avail -= 1;
+            content += 1;
+        }
+    }
+    if (show_ports && avail >= 8)
+    {
+        header_field(f, L"PORTS", 8, 0, 0, 0);
+        avail -= 8;
+        content += 8;
+        if (avail >= 1)
+        {
+            frame_puts(f, L" ");
+            avail -= 1;
+            content += 1;
+        }
+    }
+    if (avail >= 1)
+    {
+        frame_puts(f, L" ");
+        avail -= 1;
+        content += 1;
+    }
+    cmd_len = (sort == SORT_NAME) ? 8 : 7;
+    if (avail >= cmd_len)
+    {
+        header_field(f, L"COMMAND", cmd_len, 0, sort == SORT_NAME,
+                sort_desc);
+        avail -= cmd_len;
+        content += cmd_len;
+    }
+    if (content < cols)
+        frame_pad(f, cols - content);
 }
 
 /*                                   TABLE                                    */

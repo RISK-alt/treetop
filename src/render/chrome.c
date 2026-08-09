@@ -28,23 +28,34 @@
 
 #define TT_HDR_TITLE       L" treetop"
 #define TT_HDR_LIMITED     L"  limited mode"
+#define TT_HDR_PAUSED      L"  PAUSED"
 
 /*
-** Title, "limited mode", process count and clock are each written only
-** if they individually still fit in what remains of `cols` - and,
-** unlike draw_table's fixed numeric columns, each is tried independently
-** rather than the first miss aborting everything after it. There is no
-** cross-row alignment to protect here (this is one line, not N rows of
-** the same columns), so letting a later, shorter piece show up even when
-** an earlier one did not fit is strictly more informative and no less
-** correct. Whatever is left after all four attempts is spaces, so the
-** line is always exactly `cols` wide by construction.
+** Title, "limited mode", PAUSED, process count, the refresh interval and
+** the clock are each written only if they individually still fit in what
+** remains of `cols` - and, unlike draw_table's fixed numeric columns,
+** each is tried independently rather than the first miss aborting
+** everything after it. There is no cross-row alignment to protect here
+** (this is one line, not N rows of the same columns), so letting a
+** later, shorter piece show up even when an earlier one did not fit is
+** strictly more informative and no less correct. Whatever is left after
+** every attempt is spaces, so the line is always exactly `cols` wide by
+** construction.
 **
 ** "limited mode" is tried right after the title - ahead of the process
 ** count and the clock - because a degraded run being visible is the
 ** entire point of this marker (see the brief): it should survive
 ** truncation on a modestly narrow terminal even though the brief lists
 ** it last among the four things the header shows.
+**
+** PAUSED is tried immediately after that, for the same reason and then
+** some. Code review finding: src/main.c's event loop skips app_sample()
+** entirely while a->paused - by design, that is the whole point of 'p' -
+** but with nothing on screen saying so, a paused treetop and a hung one
+** are indistinguishable: the clock freezes, the table stops moving, and
+** there is no other symptom at all. It is ranked ahead of the process
+** count and the refresh interval because "is this thing actually alive"
+** is a more urgent question than either.
 **
 ** The process count reads "N / M procs" whenever visible_count differs
 ** from a->cur.count - not only under a text filter, but under
@@ -54,12 +65,21 @@
 ** inconsistency the brief's own review called out; matching on "does the
 ** displayed count differ from the total" catches every way the view can
 ** narrow it, not just the one named in the example.
+**
+** The refresh interval (a->refresh_ms, adjusted live by +/-) has no other
+** on-screen representation anywhere - pressing + or - changed real state
+** with no visible confirmation beyond the clock quietly ticking at a new
+** cadence, which nobody notices in the moment. Shown milliseconds-first
+** ("250ms") below one second, seconds with one decimal ("5.0s") at or
+** above it, matching the unit a reader would actually reach for at each
+** end of the 100-60000 ms range src/input/keys.c clamps it to.
 */
 void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
                     size_t visible_count)
 {
     wchar_t         clockbuf[16];
     wchar_t         procsbuf[48];
+    wchar_t         refreshbuf[24];
     time_t          now;
     struct tm       *tmv;
     int             avail;
@@ -83,6 +103,17 @@ void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
             avail -= len;
         }
     }
+    if (a->paused)
+    {
+        len = (int)wcslen(TT_HDR_PAUSED);
+        if (avail >= len)
+        {
+            frame_puts(f, TT_DIM);
+            frame_puts(f, TT_HDR_PAUSED);
+            frame_puts(f, TT_RESET);
+            avail -= len;
+        }
+    }
     if (visible_count != a->cur.count)
         swprintf(procsbuf, 48, L"  %llu / %llu procs",
                 (unsigned long long)visible_count,
@@ -94,6 +125,16 @@ void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
     if (avail >= len)
     {
         frame_puts(f, procsbuf);
+        avail -= len;
+    }
+    if (a->refresh_ms < 1000)
+        swprintf(refreshbuf, 24, L"  %ums", a->refresh_ms);
+    else
+        swprintf(refreshbuf, 24, L"  %.1fs", (double)a->refresh_ms / 1000.0);
+    len = (int)wcslen(refreshbuf);
+    if (avail >= len)
+    {
+        frame_puts(f, refreshbuf);
         avail -= len;
     }
     now = time(NULL);
@@ -116,13 +157,27 @@ void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
 /*                                   FOOTER                                   */
 
 /*
-** This task predates the input state machine (Task 19): there is no
-** "editing a filter" flag anywhere yet, only the live filter text itself
-** (t_view::filter). The only state this file can observe is therefore
-** whether that text is non-empty, which is what decides which of the two
-** footer layouts below is drawn. Task 19 owns making that true exactly
-** when the user intends the prompt to show - this file just renders
-** whatever v->filter currently holds.
+** Code review finding: this file used to gate the editing prompt below on
+** whether v->filter was non-empty, not on a->filter_mode (the input state
+** machine's own "the user is actively typing" flag, set by '/' and
+** cleared by Enter/Esc - see src/input/keys.c). That made two things
+** observably wrong at once. Pressing '/' with an empty filter changed no
+** pixel on screen - filter[0] was '\0' before AND after, so draw_footer
+** kept drawing the ordinary key bar - leaving a user who then typed
+** normal letters with no visible sign any of it was going into a filter
+** instead of triggering bindings, and 'q' mysteriously not quitting.
+** Pressing Enter to accept a filter had the opposite problem: filter_mode
+** already dropped back to 0, but the filter text itself is exactly what
+** Enter is FOR keeping, so the old non-empty-text check kept the editing
+** prompt (cursor included) on screen forever after, claiming the user was
+** still typing when ordinary bindings had already resumed underneath.
+**
+** draw_footer_filter() below is now shown only while a->filter_mode is
+** set - genuinely mid-edit, cursor and all. A filter that is SET but not
+** being edited (Enter already pressed) gets its own
+** draw_footer_filter_indicator(), a plain non-editing readout - see
+** draw_footer()'s own dispatch comment for how the four resulting states
+** are prioritised against a->kill_status.
 */
 
 /*
@@ -170,6 +225,38 @@ static void draw_footer_filter(t_frame *f, const t_view *v, int cols)
         frame_puts(f, TT_RESET);
         used += 1;
     }
+    if (used < avail)
+        frame_pad(f, avail - used);
+}
+
+/*
+** "filter: <text>  (Esc clears)", no cursor - the readout for a filter
+** that is SET but not being edited right now (a->filter_mode == 0, see
+** draw_footer()'s dispatch below). Without this, a filter narrowing the
+** table had no on-screen trace at all once Enter was pressed: the table
+** silently showed fewer rows and nothing on the footer explained why, or
+** told the user Esc was the way back to the full list. Right-truncates
+** via overlay_trunc() (the identifying word is the front of the line,
+** same reasoning as draw_footer_status()) rather than fmt_shorten's own
+** tail-preserving truncation, which belongs to the cursor-adjacent
+** editing prompt above, not this static summary line.
+*/
+static void draw_footer_filter_indicator(t_frame *f, const t_view *v,
+                    int cols)
+{
+    wchar_t     msg[TT_FILTER_LEN + 32];
+    wchar_t     buf[128];
+    int         avail;
+    int         used;
+
+    swprintf(msg, TT_FILTER_LEN + 32, L"filter: %ls  (Esc clears)",
+            v->filter);
+    avail = cols;
+    if (avail < 0)
+        avail = 0;
+    overlay_trunc(msg, avail, buf, 128);
+    frame_puts(f, buf);
+    used = (int)wcslen(buf);
     if (used < avail)
         frame_pad(f, avail - used);
 }
@@ -259,22 +346,44 @@ static void draw_footer_status(t_frame *f, const wchar_t *msg, int cols)
 }
 
 /*
-** Three mutually exclusive layouts, checked in this order: an active
-** filter always wins (it needs the user's own typing visible and
-** editable, which nothing else on this line competes for); otherwise a
-** pending kill_status message from the last F9/Shift+F9 attempt is shown
-** until the next one overwrites or clears it; otherwise the ordinary key
-** bar. There is no timer that expires kill_status on its own - it is
-** exactly as persistent as a->paused, cleared only by the next
+** Four mutually exclusive layouts, checked in this order:
+**
+**   1. a->filter_mode (actively editing) always wins outright - it needs
+**      the user's own typing visible and editable, which nothing else on
+**      this line competes for, and keys_handle() itself already routes
+**      every keystroke to the filter buffer while this is set, so nothing
+**      else on this footer could be "live" at the same time regardless.
+**   2. a->kill_status, otherwise - a pending failure message from the
+**      last F9/Shift+F9 attempt. Code review finding: this used to be
+**      permanently masked by a non-empty a->view.filter, silently
+**      swallowing "access denied - try running as administrator" for the
+**      entire rest of the session on the filter -> kill -> denied
+**      workflow the README's own screenshot demonstrates - exactly the
+**      one place the brief (see design doc SS11) requires that message to
+**      reach the user. kill_status can only ever become non-empty while
+**      filter_mode is 0 (open_kill_confirm() is unreachable from
+**      filter-editing dispatch - see keys.c), so this can never itself
+**      race case 1 above.
+**   3. a non-empty a->view.filter that is NOT currently being edited - a
+**      plain "filter: text (Esc clears)" readout, so a filter that is
+**      narrowing the table still leaves a trace on screen after Enter is
+**      pressed instead of reverting to a key bar that looks like nothing
+**      is filtered at all.
+**   4. the ordinary key bar.
+**
+** There is no timer that expires kill_status on its own - it is exactly
+** as persistent as a->paused, cleared only by the next
 ** open_kill_confirm() (a fresh dialog opening - see keys.c) or the next
 ** execute_confirmed_kill() (src/main.c) outcome.
 */
 void    draw_footer(t_frame *f, const t_app *a, int cols)
 {
-    if (a->view.filter[0] != L'\0')
+    if (a->filter_mode)
         draw_footer_filter(f, &a->view, cols);
     else if (a->kill_status[0] != L'\0')
         draw_footer_status(f, a->kill_status, cols);
+    else if (a->view.filter[0] != L'\0')
+        draw_footer_filter_indicator(f, &a->view, cols);
     else
         draw_footer_keys(f, cols);
     frame_puts(f, L"\r\n");
@@ -825,7 +934,12 @@ static void confirm_resolve_and_draw(t_frame *f, t_app *a, int cols,
 **   3. meters (2 or 3 lines, cols-dependent) - load figures, real but the
 **      most dispensable of the four sections; dropped whole rather than
 **      partially (draw_meters has no notion of "draw fewer lines").
-**   4. table - whatever budget is left, always, per the brief's own "the
+**   4. column header (1 line) - labels PID/CPU%/MEM/PORTS/COMMAND and
+**      marks whichever one a->view.sort names, so the table below is
+**      never a grid of unlabelled numbers. Ranked below meters: the more
+**      dispensable of the two remaining sections, since the table itself
+**      still degrades gracefully with no header at all.
+**   5. table - whatever budget is left, always, per the brief's own "the
 **      table simply gets fewer rows". Can be (and often is) 0.
 **
 ** Each section is included only if the FULL amount it needs still fits
@@ -896,6 +1010,7 @@ void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
     int         show_footer;
     int         show_header;
     int         show_meters;
+    int         show_col_header;
     int         meter_lines;
     int         budget;
     int         table_rows;
@@ -945,11 +1060,19 @@ void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
     show_meters = (budget >= meter_lines);
     if (show_meters)
         budget -= meter_lines;
+    show_col_header = (budget >= 1);
+    if (show_col_header)
+        budget -= 1;
     table_rows = budget;
     if (show_header)
         draw_header(f, a, cols, limited, nrows);
     if (show_meters)
         draw_meters(f, &a->sys, cols);
+    if (show_col_header)
+    {
+        draw_table_header(f, cols, a->view.sort, a->view.sort_desc);
+        frame_puts(f, L"\r\n");
+    }
     top = 0;
     if (sel != (size_t)-1 && table_rows > 0)
     {
