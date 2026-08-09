@@ -2,11 +2,12 @@
 #include "app.h"
 #include "render.h"
 #include "console.h"
+#include "cli.h"
+#include "theme.h"
 
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <wchar.h>
 
 /*
@@ -183,7 +184,7 @@ static void execute_confirmed_kill(t_app *a)
 ** still behind after the one += step, jump straight to now + refresh_ms
 ** instead of looping) is what turns that burst into a single sample.
 */
-static int  run_interactive(void)
+static int  run_interactive(unsigned int refresh_ms)
 {
     t_app                a;
     t_frame              f;
@@ -200,6 +201,7 @@ static int  run_interactive(void)
         tt_warn("failed to initialise");
         return (1);
     }
+    a.refresh_ms = refresh_ms;
     if (con_init() != 0)
     {
         tt_warn("failed to initialise the console");
@@ -266,7 +268,7 @@ static int  run_interactive(void)
 ** every process and the whole point of this flag - letting an agent see
 ** its own real footprint - would be a lie.
 */
-static int  run_json(void)
+static int  run_json(unsigned int refresh_ms)
 {
     t_app   a;
 
@@ -275,6 +277,7 @@ static int  run_json(void)
         tt_warn("failed to initialise");
         return (1);
     }
+    a.refresh_ms = refresh_ms;
     if (a.limited)
         tt_warn("running in limited mode (ntdll unavailable)");
     app_sample(&a);
@@ -285,11 +288,31 @@ static int  run_json(void)
     return (0);
 }
 
+/*
+** NO_COLOR is read here, in the one file allowed to touch the
+** environment, and folded into opts.no_color BEFORE cli_parse() ever
+** runs - see cli.h's contract on t_opts.no_color. cli_parse() itself
+** only ever sets no_color to 1 (on --no-color), never back to 0, so
+** whichever of NO_COLOR/--no-color fires first is never undone by the
+** other - there is no --color flag to undo it with either.
+*/
 int     main(int argc, char **argv)
 {
-    if (argc > 1 && strcmp(argv[1], "--selftest") == 0)
+    t_opts      opts;
+    int         rc;
+    const char  *no_color_env;
+
+    no_color_env = getenv("NO_COLOR");
+    opts.no_color = (no_color_env != NULL && no_color_env[0] != '\0');
+    rc = cli_parse(argc, argv, &opts);
+    if (rc == 1)
+        return (0);
+    if (rc == -1)
+        return (1);
+    g_color = opts.no_color ? 0 : 1;
+    if (opts.selftest)
         return (app_selftest());
-    if (argc > 1 && strcmp(argv[1], "--json") == 0)
-        return (run_json());
-    return (run_interactive());
+    if (opts.json)
+        return (run_json(opts.refresh_ms));
+    return (run_interactive(opts.refresh_ms));
 }
