@@ -166,6 +166,15 @@ Prerequisites and troubleshooting: **[docs/install.md](docs/install.md)**.
 - Agent detection is pattern-based. An agent invoked in an unusual way
   may not be recognised — the rule table is one line per entry and takes
   a pull request.
+- Orphan detection has a false-positive class: `parent_missing AND
+  (holds_listening_port OR image ∈ dev_runtimes)` flags any parentless
+  third-party app that happens to hold a listener, not only a dev tool
+  left running. On the machine this README was written on, the sole
+  orphan reported is `Spotify.exe --autostart` holding three ports — it
+  was launched from a terminal that has since closed, same as any dev
+  server would be, and the heuristic cannot tell the two apart. It is a
+  qualified guess, not a certainty; check the image name before killing
+  anything the ORPHAN marker flags.
 
 ## Licence
 

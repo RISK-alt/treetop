@@ -103,11 +103,13 @@ wherever you got the mismatched copy — don't run it.
 
 ## Font and encoding
 
-treetop draws its tree with box-drawing characters (`├`, `└`, `─`) and
-its CPU/memory gauges with Unicode block glyphs (`█`, `▓`, `▒`, `░`).
-Most bundled Windows fonts don't cover these, so if your terminal is set
-to Consolas or a similar default, expect a screen full of empty boxes
-instead of a tree.
+treetop draws its tree with box-drawing characters (`├`, `└`, `─`), its
+CPU/memory gauges with two Unicode block glyphs (`█` filled, `░` empty),
+and its per-core strip with all eight partial-block heights (`▁` through
+`█`) for a finer-grained level than the two gauges need. Most bundled
+Windows fonts don't cover these, so if your terminal is set to Consolas
+or a similar default, expect a screen full of empty boxes instead of a
+tree.
 
 Use a font that actually covers them — **Cascadia Mono** (ships with
 Windows Terminal, or install it separately) or **JetBrains Mono** both
