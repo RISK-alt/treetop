@@ -181,12 +181,22 @@ int     con_init(void)
 ** sequence below; that is harmless (the process is exiting either way)
 ** and the SetConsoleMode calls that actually restore the terminal
 ** still run to completion regardless.
+**
+** g_active is checked before the interlocked exchange, not after: it
+** is set exactly once, on the main thread, strictly before con_init()
+** registers either the atexit or the ctrl handler, so nothing can call
+** in here concurrently while it is still 0. Checking it first means a
+** call that lands before a successful con_init() - defensive cleanup
+** after con_init() itself failed, say - costs nothing and, critically,
+** does not consume the one-shot flag. If it did, and that same process
+** went on to call con_init() successfully afterwards, the real
+** shutdown that atexit/Ctrl+C registers later would silently no-op.
 */
 void    con_shutdown(void)
 {
-    if (InterlockedCompareExchange(&g_shutdown_done, 1, 0) != 0)
-        return ;
     if (!g_active)
+        return ;
+    if (InterlockedCompareExchange(&g_shutdown_done, 1, 0) != 0)
         return ;
     con_write(TT_SEQ_CURSOR_ON, wcslen(TT_SEQ_CURSOR_ON));
     con_write(TT_SEQ_ALT_OFF, wcslen(TT_SEQ_ALT_OFF));
