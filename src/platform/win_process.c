@@ -72,7 +72,7 @@ static void image_from_unicode(const UNICODE_STRING *src, wchar_t *out)
 /*                              PRIMARY PATH: NT                              */
 
 /*
-** Queries SystemProcessInformation into a heap buffer that grows to fit,
+** Queries TT_SystemProcessInformation into a heap buffer that grows to fit,
 ** bounded by TT_QUERY_MAX_RETRIES. On success *out_buf owns the buffer
 ** (caller frees it) and *out_len is the number of bytes NtQuerySystem-
 ** Information actually wrote - the bound the entry walk trusts instead
@@ -95,7 +95,8 @@ static int query_process_snapshot(unsigned char **out_buf, ULONG *out_len)
     while (tries < TT_QUERY_MAX_RETRIES)
     {
         got = 0;
-        status = nt_query_system(SystemProcessInformation, buf, cap, &got);
+        status = nt_query_system(TT_SystemProcessInformation, buf, cap,
+                &got);
         if (status == 0)
         {
             *out_buf = buf;

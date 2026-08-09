@@ -85,7 +85,7 @@ int     plat_system(t_sysinfo *out)
     read_memory(out);
     out->uptime_secs = GetTickCount64() / 1000;
     len = 0;
-    if (nt_query_system(SystemProcessorPerformanceInformation, perf,
+    if (nt_query_system(TT_SystemProcessorPerformanceInformation, perf,
             (ULONG)(sizeof(perf[0]) * out->core_count), &len) != 0)
         return (-1);
     /*

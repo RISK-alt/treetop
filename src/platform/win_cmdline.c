@@ -83,7 +83,7 @@ static int  cache_add(t_proc_key key, wchar_t *value)
 
 /*
 ** buf holds a UNICODE_STRING immediately followed by its character data
-** in the same allocation, per ProcessCommandLineInformation's contract.
+** in the same allocation, per TT_ProcessCommandLineInformation's contract.
 ** Buffer points at that trailing data, Length is a byte count, and the
 ** data is not NUL-terminated - the same three traps win_process.c's
 ** image_from_unicode() documents for ImageName, plus one more: the
@@ -136,15 +136,15 @@ static wchar_t  *fetch_primary(HANDLE h)
     wchar_t         *out;
 
     needed = 0;
-    nt_query_process(h, ProcessCommandLineInformation, NULL, 0, &needed);
+    nt_query_process(h, TT_ProcessCommandLineInformation, NULL, 0, &needed);
     if (needed == 0 || needed > TT_CMDLINE_MAX_BYTES)
         return (NULL);
     buf = malloc(needed);
     if (buf == NULL)
         return (NULL);
     got = 0;
-    status = nt_query_process(h, ProcessCommandLineInformation, buf, needed,
-            &got);
+    status = nt_query_process(h, TT_ProcessCommandLineInformation, buf,
+            needed, &got);
     if (status != 0)
     {
         free(buf);
@@ -198,8 +198,8 @@ static wchar_t  *fetch_fallback_peb(unsigned long pid)
     }
     memset(&pbi, 0, sizeof(pbi));
     ret = 0;
-    status = nt_query_process(h, ProcessBasicInformation, &pbi, sizeof(pbi),
-            &ret);
+    status = nt_query_process(h, TT_ProcessBasicInformation, &pbi,
+            sizeof(pbi), &ret);
     if (status != 0 || pbi.PebBaseAddress == NULL)
     {
         CloseHandle(h);

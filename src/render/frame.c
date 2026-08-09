@@ -122,7 +122,7 @@ void    frame_printf(t_frame *f, const wchar_t *fmt, ...)
         return ;
     }
     cap = 256;
-    while (1)
+    for (;;)
     {
         heap = malloc(cap * sizeof(wchar_t));
         if (heap == NULL)

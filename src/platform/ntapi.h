@@ -6,10 +6,25 @@
 
 /*                           INFORMATION CLASSES                              */
 
-# define SystemProcessInformation               5
-# define SystemProcessorPerformanceInformation  8
-# define ProcessBasicInformation                0
-# define ProcessCommandLineInformation          60
+/*
+** Code review finding: these were unguarded object-like macros named
+** exactly like the SYSTEM_INFORMATION_CLASS / PROCESSINFOCLASS enumerator
+** constants the Windows SDK's own <winternl.h> declares. MinGW-w64 never
+** pulls that header in here, so it has never mattered in this project's
+** own CI - but the moment any future SDK header (directly, or transitively
+** through something this file did not expect) drags winternl.h into the
+** same translation unit, the preprocessor rewrites its
+** `SystemProcessInformation` enumerator token before the compiler ever
+** sees an enum to complain about, and the failure that comes out the
+** other side is a wall of unrelated-looking syntax errors nowhere near
+** this file - exactly the unreadable-breakage class TT_-prefixing the
+** structs above already exists to avoid. Prefixed the same way, for the
+** same reason, and every call site updated to match.
+*/
+# define TT_SystemProcessInformation               5
+# define TT_SystemProcessorPerformanceInformation  8
+# define TT_ProcessBasicInformation                0
+# define TT_ProcessCommandLineInformation          60
 
 /*                          SEMI-DOCUMENTED TYPES                             */
 

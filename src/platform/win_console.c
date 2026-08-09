@@ -264,7 +264,7 @@ int     con_wait_key(unsigned int timeout_ms)
     if (g_hin == NULL || g_hin == INVALID_HANDLE_VALUE)
         return (0);
     deadline = GetTickCount64() + timeout_ms;
-    while (1)
+    for (;;)
     {
         now = GetTickCount64();
         if (now >= deadline)
