@@ -187,6 +187,60 @@ static void test_ppid_zero_is_root(void)
     table_free(&t);
 }
 
+static void test_orphans(void)
+{
+    t_table     t;
+    t_process   p;
+
+    table_init(&t, 8);
+
+    /* Dev runtime with a dead parent: orphan. */
+    p = mk_proc(200, 1000, 999, L"node.exe");   table_add(&t, &p);
+
+    /* Non-dev process with a dead parent: NOT an orphan. Windows is full
+       of these and flagging them would drown the signal. */
+    p = mk_proc(201, 1000, 999, L"explorer.exe"); table_add(&t, &p);
+
+    /* Non-dev, dead parent, but holding a port: orphan. */
+    p = mk_proc(202, 1000, 999, L"mystery.exe");
+    p.ports[0] = 3000; p.port_count = 1;        table_add(&t, &p);
+
+    /* Dev runtime with a live parent: not an orphan. */
+    p = mk_proc(100, 500, 4, L"claude.exe");    table_add(&t, &p);
+    p = mk_proc(203, 1000, 100, L"node.exe");   table_add(&t, &p);
+
+    /* ppid 0 is a true system root, never an orphan. */
+    p = mk_proc(4, 0, 0, L"System");            table_add(&t, &p);
+
+    /* ppid 0 AND a dev-runtime image: still never an orphan. Without the
+       ppid == 0 guard this would be wrongly flagged, and unlike the
+       System row above it would not survive the guard's deletion by
+       accident - it is specifically built to trip the other qualifiers. */
+    p = mk_proc(6, 0, 0, L"node.exe");          table_add(&t, &p);
+
+    tree_build(&t);
+
+    TT_EQ_INT(t.procs[0].is_orphan, 1);
+    TT_EQ_INT(t.procs[1].is_orphan, 0);
+    TT_EQ_INT(t.procs[2].is_orphan, 1);
+    TT_EQ_INT(t.procs[4].is_orphan, 0);
+    TT_EQ_INT(t.procs[5].is_orphan, 0);
+    TT_EQ_INT(t.procs[6].is_orphan, 0);
+    table_free(&t);
+}
+
+static void test_dev_runtime_names(void)
+{
+    TT_EQ_INT(is_dev_runtime(L"node.exe"), 1);
+    TT_EQ_INT(is_dev_runtime(L"NODE.EXE"), 1);     /* case-insensitive */
+    TT_EQ_INT(is_dev_runtime(L"node"), 1);         /* extension optional */
+    TT_EQ_INT(is_dev_runtime(L"pwsh.exe"), 1);
+    TT_EQ_INT(is_dev_runtime(L"dotnet.exe"), 1);
+    TT_EQ_INT(is_dev_runtime(L"explorer.exe"), 0);
+    TT_EQ_INT(is_dev_runtime(L"nodepad.exe"), 0);  /* prefix must not match */
+    TT_EQ_INT(is_dev_runtime(L""), 0);
+}
+
 void    test_tree(void)
 {
     test_links();
@@ -198,4 +252,6 @@ void    test_tree(void)
     test_cycle_does_not_hang();
     test_flatten_respects_max();
     test_ppid_zero_is_root();
+    test_orphans();
+    test_dev_runtime_names();
 }

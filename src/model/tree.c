@@ -116,6 +116,7 @@ void    tree_build(t_table *tbl)
             aggregate(&tbl->procs[i], 0);
         }
     }
+    tree_mark_orphans(tbl);
 }
 
 static size_t   emit(t_process *p, t_process **out, size_t max, size_t n,
@@ -147,4 +148,70 @@ size_t  tree_flatten(t_table *tbl, t_process **out, size_t max)
         if (tbl->procs[i].parent == NULL)
             n = emit(&tbl->procs[i], out, max, n, 0);
     return (n);
+}
+
+/*                                 ORPHANS                                    */
+
+/*
+** Processes whose parent has exited are extremely common on Windows -
+** anything launched from a terminal that has since closed. Only the ones
+** that look like a tool left something running are worth flagging.
+*/
+static const wchar_t    *g_dev_runtimes[] = {
+    L"node", L"deno", L"bun", L"python", L"pythonw", L"cargo", L"rustc",
+    L"dotnet", L"java", L"go", L"pwsh", L"powershell", L"cmd", L"npm",
+    L"pnpm", L"yarn", L"vite", L"webpack", L"esbuild", L"tsc", L"nodemon",
+    NULL
+};
+
+static int  wcs_ieq(const wchar_t *a, const wchar_t *b)
+{
+    while (*a != L'\0' && *b != L'\0')
+    {
+        wchar_t ca = (*a >= L'A' && *a <= L'Z') ? (wchar_t)(*a + 32) : *a;
+        wchar_t cb = (*b >= L'A' && *b <= L'Z') ? (wchar_t)(*b + 32) : *b;
+
+        if (ca != cb)
+            return (0);
+        a++;
+        b++;
+    }
+    return (*a == *b);
+}
+
+int     is_dev_runtime(const wchar_t *image)
+{
+    wchar_t         stem[TT_IMAGE_LEN];
+    const wchar_t   *dot;
+    size_t          len;
+    int             i;
+
+    if (image == NULL || image[0] == L'\0')
+        return (0);
+    dot = wcsrchr(image, L'.');
+    len = (dot != NULL) ? (size_t)(dot - image) : wcslen(image);
+    if (len >= TT_IMAGE_LEN)
+        len = TT_IMAGE_LEN - 1;
+    wmemcpy(stem, image, len);
+    stem[len] = L'\0';
+    for (i = 0; g_dev_runtimes[i] != NULL; i++)
+        if (wcs_ieq(stem, g_dev_runtimes[i]))
+            return (1);
+    return (0);
+}
+
+void    tree_mark_orphans(t_table *tbl)
+{
+    t_process   *p;
+    size_t      i;
+
+    for (i = 0; i < tbl->count; i++)
+    {
+        p = &tbl->procs[i];
+        p->is_orphan = 0;
+        if (p->parent != NULL || p->ppid == 0)
+            continue;
+        if (p->port_count > 0 || is_dev_runtime(p->image))
+            p->is_orphan = 1;
+    }
 }
