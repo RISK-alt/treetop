@@ -26,8 +26,8 @@
 
 /*                                   HEADER                                   */
 
-# define TT_HDR_TITLE       L" treetop"
-# define TT_HDR_LIMITED     L"  limited mode"
+#define TT_HDR_TITLE       L" treetop"
+#define TT_HDR_LIMITED     L"  limited mode"
 
 /*
 ** Title, "limited mode", process count and clock are each written only
@@ -197,7 +197,7 @@ static const wchar_t   *g_footer_keys[] = {
     L"p pause",
 };
 
-# define TT_FOOTER_KEY_COUNT \
+#define TT_FOOTER_KEY_COUNT \
     (sizeof(g_footer_keys) / sizeof(g_footer_keys[0]))
 
 static void draw_footer_keys(t_frame *f, int cols)
@@ -313,12 +313,12 @@ static const t_help_entry  g_help_bindings[] = {
     { L"q",                    L"quit" },
 };
 
-# define TT_HELP_KEY_COL        10
-# define TT_HELP_BIND_COUNT \
+#define TT_HELP_KEY_COL        10
+#define TT_HELP_BIND_COUNT \
     (sizeof(g_help_bindings) / sizeof(g_help_bindings[0]))
 /* title line + one per binding + the dismiss hint. */
-# define TT_HELP_CONTENT_MAX    (TT_HELP_BIND_COUNT + 2)
-# define TT_HELP_LINE_BUF       48
+#define TT_HELP_CONTENT_MAX    (TT_HELP_BIND_COUNT + 2)
+#define TT_HELP_LINE_BUF       48
 
 /*
 ** Formats every content line (title, one per binding, dismiss hint) at

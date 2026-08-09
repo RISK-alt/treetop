@@ -22,12 +22,12 @@
 ** anyway rather than betting correctness on today's console host
 ** behaving the same way forever.
 */
-# define TT_CON_CHUNK       8192u
+#define TT_CON_CHUNK       8192u
 
-# define TT_SEQ_ALT_ON      L"\x1b[?1049h"
-# define TT_SEQ_ALT_OFF     L"\x1b[?1049l"
-# define TT_SEQ_CURSOR_ON   L"\x1b[?25h"
-# define TT_SEQ_CURSOR_OFF  L"\x1b[?25l"
+#define TT_SEQ_ALT_ON      L"\x1b[?1049h"
+#define TT_SEQ_ALT_OFF     L"\x1b[?1049l"
+#define TT_SEQ_CURSOR_ON   L"\x1b[?25h"
+#define TT_SEQ_CURSOR_OFF  L"\x1b[?25l"
 
 /*                                   STATE                                    */
 
