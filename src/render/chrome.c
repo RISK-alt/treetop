@@ -361,6 +361,25 @@ static size_t   build_help_lines(wchar_t lines[][TT_HELP_LINE_BUF])
 ** draw_confirm() (Task 20) - since both degrade the same way: shrink the
 ** box to fit cols, truncate content lines that do not fit, and refuse to
 ** draw a malformed box at all below a minimum viable size.
+**
+** `max` (the caller's requested visible width) and `n` (the destination
+** buffer's actual capacity) are two independent numbers - nothing about
+** this function's signature makes max < n true, and for a while nothing
+** in this file enforced it either: draw_confirm()'s title can be
+** arbitrarily long (an unbounded caller-supplied string, not bounded by
+** TT_IMAGE_LEN or any other compile-time constant this file controls),
+** and the "already fits" branch below used to trust `max` outright and
+** hand it straight to swprintf(), which silently truncates to `n` with
+** NO ellipsis whenever the real string is longer than the buffer that
+** happens to be backing it - the exact silent-truncation defect class
+** the brief warns this project has shipped three times before. Sizing
+** one caller's buffer generously (as draw_confirm()'s own
+** TT_CONFIRM_LINE_BUF does, for today's realistic worst case) fixes that
+** ONE caller for TODAY's inputs; it does nothing for a future caller, or
+** for TT_IMAGE_LEN growing past 64. Clamping `max` down to what `n` can
+** actually hold - once, here, before any branch below runs - is what
+** makes every caller, present and future, safe by construction instead
+** of safe by coincidence of buffer sizing.
 */
 static void overlay_trunc(const wchar_t *src, int max, wchar_t *out, size_t n)
 {
@@ -368,6 +387,13 @@ static void overlay_trunc(const wchar_t *src, int max, wchar_t *out, size_t n)
 
     if (n == 0)
         return ;
+    if (max <= 0)
+    {
+        out[0] = L'\0';
+        return ;
+    }
+    if ((size_t)max > n - 1)
+        max = (int)(n - 1);
     if (max <= 0)
     {
         out[0] = L'\0';
@@ -834,6 +860,32 @@ static void confirm_resolve_and_draw(t_frame *f, t_app *a, int cols,
 ** victim list's own screen space unconstrained by the header/meters/
 ** footer budget math below, which exists to serve a completely different
 ** section set.
+**
+** Code review finding: draw_help() (Task 18) had exactly this same
+** overlay shape - a full-screen box, "dismissed by any key" per its own
+** brief - but nothing anywhere in the codebase ever called it. keys_handle()
+** (src/input/keys.c) faithfully toggles a->help_open on F1/? and
+** implements "any key dismisses," both unit-tested in isolation, but
+** render_all() never read the flag: pressing F1 in the running tool
+** changed state that nothing ever drew, and the very next keypress
+** silently discarded that state again. Two pieces individually correct,
+** the connection between them missing, and every unit test green because
+** none of them tested the PAIR - the same integration failure this
+** project has hit before (depth corrupted across a view-mode switch,
+** port state zeroed two ticks in three). Wired the same way the confirm
+** overlay above already is: an early return before any of the ordinary
+** section budget math runs.
+**
+** Precedence when both a->confirm_open and a->help_open are set at
+** once (reachable only via hand-built state, like the test below does -
+** keys_handle() itself never sets help_open while a confirmation is
+** open, since confirm_open's own dispatch in keys_handle() intercepts
+** every key first, F1 included): the confirmation wins. It is modal on
+** a decision to destroy something; the help overlay is not modal on
+** anything and can simply wait one more frame. Enforced below by
+** checking confirm_open first and returning before help_open is even
+** read - not by a priority flag or ordering trick, so no future change
+** to either branch can accidentally invert it.
 */
 void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
 {
@@ -854,6 +906,11 @@ void    render_all(t_frame *f, t_app *a, int cols, int rows, int limited)
     if (a->confirm_open)
     {
         confirm_resolve_and_draw(f, a, cols, rows);
+        return ;
+    }
+    if (a->help_open)
+    {
+        draw_help(f, cols, rows);
         return ;
     }
     rowbuf = NULL;

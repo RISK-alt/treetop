@@ -690,6 +690,60 @@ static void test_confirm_long_title_renders_in_full_on_wide_terminal(void)
     frame_free(&f);
 }
 
+/*
+** Code review finding: the previous test above proves draw_confirm()
+** survives TODAY's worst-case title (a 63-char image name, ~90
+** characters total) because its shared internal buffer happens to be
+** sized above that. That is safety by coincidence of buffer sizing, not
+** by construction - draw_confirm() takes an arbitrary caller-supplied
+** `title` with no enforced bound, so a future caller (or TT_IMAGE_LEN
+** simply growing past its current 64) reproduces the identical silent-
+** truncation-without-ellipsis defect against a bigger buffer.
+**
+** This test is deliberately independent of whatever the internal buffer
+** size happens to be today or in the future: a 1000-character title,
+** three orders of magnitude past any real title this codebase composes,
+** on a terminal wide enough (cols=1100, comfortably past the box's own
+** 1000+4=1004 natural width so cols itself is not what does the
+** clamping) that the box's own width math would - before this fix -
+** size the box to fit the whole title and take overlay_trunc()'s
+** "already fits" branch. The fix under test is the clamp INSIDE
+** overlay_trunc() itself (against its own destination buffer capacity,
+** not against the caller's requested width), so this must still produce
+** a correctly ellipsis-truncated, exactly-`cols`-wide line - not a
+** silently cut-off one, and not a buffer overrun - no matter how large
+** TT_CONFIRM_LINE_BUF is ever set to. rows is kept modest (15) so the
+** rendered output stays comfortably under for_each_line()'s own 32768
+** wchar_t scratch buffer - this is a test of draw_confirm(), not of
+** exhausting that shared test helper's own separate, unrelated capacity.
+*/
+static void test_confirm_title_longer_than_any_buffer_still_ellipsizes(void)
+{
+    t_frame     f;
+    wchar_t     title[1024];
+    int         i;
+
+    i = 0;
+    while (i < 1000)
+    {
+        title[i] = (wchar_t)(L'a' + (i % 26));
+        i++;
+    }
+    title[1000] = L'\0';
+
+    TT_EQ_INT(frame_init(&f, 16384), 0);
+    draw_confirm(&f, title, NULL, 0, 1100, 15);
+    f.buf[f.len] = L'\0';
+    TT_CHECK(wcsstr(f.buf, title) == NULL);        /* NOT verbatim */
+    TT_CHECK(wcsstr(f.buf, L"\u2026") != NULL);     /* properly ellipsized */
+    {
+        int cols = 1100;
+        for_each_line(f.buf, check_width_exact_cb, &cols);
+    }
+    TT_EQ_INT((int)count_lines(f.buf), 15);
+    frame_free(&f);
+}
+
 /*                                 RENDER_ALL                                 */
 
 /*
@@ -1224,6 +1278,97 @@ static void test_render_all_confirm_resolves_victim_against_live_table(void)
     table_free(&a.prev);
 }
 
+/*                       RENDER_ALL HELP OVERLAY                              */
+
+/*
+** Code review finding: draw_help() had no call site anywhere in the
+** codebase - a->help_open toggled correctly (Task 19, unit-tested) and
+** draw_help() itself rendered correctly (Task 18, unit-tested), but
+** nothing ever connected the two, so pressing F1 in the running tool did
+** nothing observable at all. Wired the same way the confirm overlay
+** above already proves out: render_all() must show ONLY the help box
+** while a->help_open, displacing header/meters/table/footer entirely -
+** proven the same way test_render_all_confirm_open_shows_overlay_not_normal_content
+** proves it for the confirm overlay, by checking a marker unique to each
+** displaced section is absent while a help-specific marker is present.
+*/
+static void test_render_all_help_open_shows_overlay_not_normal_content(void)
+{
+    t_app       a;
+    t_process   p;
+    t_frame     f;
+
+    mk_app(&a);
+    TT_EQ_INT(table_init(&a.cur, 8), 0);
+    TT_EQ_INT(table_init(&a.prev, 8), 0);
+    view_init(&a.view);
+    p = mk_proc(100, 1000, 4, L"zzztargetproc.exe");
+    table_add(&a.cur, &p);
+    tree_build(&a.cur);
+    a.sys.core_count = 4;
+    a.help_open = 1;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, 120, 30, 0);
+    f.buf[f.len] = L'\0';
+
+    TT_CHECK(wcsstr(f.buf, L"CPU") == NULL);              /* meters absent */
+    TT_CHECK(wcsstr(f.buf, L"zzztargetproc.exe") == NULL);/* table absent */
+    TT_CHECK(wcsstr(f.buf, L"procs") == NULL);             /* header absent */
+    TT_CHECK(wcsstr(f.buf, L"move selection") != NULL);    /* help content */
+    TT_CHECK(wcsstr(f.buf, L"press any key to close") != NULL);
+    TT_CHECK(wcsncmp(f.buf, L"\x1b[H\x1b[2J", 7) == 0);
+
+    frame_free(&f);
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
+/*
+** Precedence: a confirmation open on a destructive action must win over
+** the (non-modal) help overlay if both flags are somehow set at once -
+** see render_all()'s own comment on why. Both set here by hand (the real
+** keys_handle() dispatch never reaches this state itself, since
+** confirm_open's own check runs first and swallows F1 along with every
+** other key while a dialog is open - this test is exercising render_all()'s
+** own defensive ordering directly, independent of how state gets there).
+*/
+static void test_render_all_confirm_wins_over_help_when_both_open(void)
+{
+    t_app       a;
+    t_process   p;
+    t_frame     f;
+    t_proc_key  victims[1];
+
+    mk_app(&a);
+    TT_EQ_INT(table_init(&a.cur, 8), 0);
+    TT_EQ_INT(table_init(&a.prev, 8), 0);
+    view_init(&a.view);
+    p = mk_proc(100, 1000, 4, L"victim.exe");
+    table_add(&a.cur, &p);
+    tree_build(&a.cur);
+
+    victims[0] = a.cur.procs[0].key;
+    a.confirm_open = 1;
+    a.confirm_subtree = 0;
+    a.confirm_victims = victims;
+    a.confirm_count = 1;
+    a.help_open = 1;
+
+    TT_EQ_INT(frame_init(&f, 65536), 0);
+    render_all(&f, &a, 120, 30, 0);
+    f.buf[f.len] = L'\0';
+
+    TT_CHECK(wcsstr(f.buf, L"Terminate? [y/N]") != NULL);
+    TT_CHECK(wcsstr(f.buf, L"press any key to close") == NULL);
+    TT_CHECK(wcsstr(f.buf, L"move selection") == NULL);
+
+    a.confirm_victims = NULL;
+    frame_free(&f);
+    table_free(&a.cur);
+    table_free(&a.prev);
+}
+
 void    test_chrome(void)
 {
     test_header_width_exact_at_every_col();
@@ -1246,6 +1391,7 @@ void    test_chrome(void)
     test_confirm_refuses_below_minimum();
     test_confirm_zero_victims_is_safe();
     test_confirm_long_title_renders_in_full_on_wide_terminal();
+    test_confirm_title_longer_than_any_buffer_still_ellipsizes();
     test_render_all_order_and_line_budget();
     test_render_all_first_line_width();
     test_render_all_rows_never_exceed_budget();
@@ -1255,4 +1401,6 @@ void    test_chrome(void)
     test_render_all_selection_absent_key_no_crash();
     test_render_all_confirm_open_shows_overlay_not_normal_content();
     test_render_all_confirm_resolves_victim_against_live_table();
+    test_render_all_help_open_shows_overlay_not_normal_content();
+    test_render_all_confirm_wins_over_help_when_both_open();
 }
