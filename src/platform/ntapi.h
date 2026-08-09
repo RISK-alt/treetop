@@ -79,9 +79,23 @@ typedef struct _TT_VM_COUNTERS
 }   TT_VM_COUNTERS;
 
 /*
-** Not used until Task 10, which walks SystemProcessInformation to build
-** the process table. Declared now so every ntdll-shaped type lives here,
-** in the one file that owns semi-documented API.
+** Used by Task 10, which walks SystemProcessInformation to build the
+** process table. Field layout checked directly against the installed
+** MinGW-w64 winternl.h (x86_64-w64-mingw32/include/winternl.h) rather
+** than trusted from memory - it matches this struct exactly, Reserved[3]
+** included.
+**
+** Reserved[3] is three LARGE_INTEGERs (24 bytes) that, since Vista,
+** carry named fields MinGW's own header still lumps together:
+**   Reserved[0].QuadPart        -> WorkingSetPrivateSize  (Vista+)
+**   Reserved[1] low/high ULONG  -> HardFaultCount,
+**                                  NumberOfThreadsHighWatermark (Win7+)
+**   Reserved[2].QuadPart        -> CycleTime               (Win7+)
+** Task 10 only needs the first slot. Splitting Reserved[3] into named
+** fields here was considered and rejected: this exact layout is the one
+** verified against the real header, and hand-deriving sub-field offsets
+** for the other two slots would trade a checked struct for a guessed
+** one, for fields nothing in this codebase reads.
 */
 typedef struct _TT_SYSTEM_PROCESS_INFORMATION
 {
