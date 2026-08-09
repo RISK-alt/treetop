@@ -45,6 +45,22 @@ static void test_shorten(void)
     /* Degenerate width still produces a valid string. */
     fmt_shorten(L"abcdef", 2, buf, 64);
     TT_EQ_INT((int)wcslen(buf) <= 2, 1);
+
+    /* Regression: with n == 1 the caller has room for exactly one
+       wchar_t. The max < 2 branch used to write out[0] and out[1]
+       unconditionally, one wchar_t past a buffer this small. Confirm the
+       call now stays inside its declared capacity: out[0] becomes a
+       valid empty string, and the guard value placed right after it is
+       left untouched. */
+    {
+        wchar_t guard[2];
+
+        guard[0] = L'?';
+        guard[1] = L'#';
+        fmt_shorten(L"abcdef", 1, guard, 1);
+        TT_EQ_WSTR(guard, L"");
+        TT_EQ_INT(guard[1], L'#');
+    }
 }
 
 void    test_format(void)

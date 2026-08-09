@@ -63,10 +63,17 @@ void    fmt_shorten(const wchar_t *src, size_t max, wchar_t *out, size_t n)
         swprintf(out, n, L"%ls", src);
         return;
     }
+    /* n is the buffer capacity and binds every branch, including this
+       one: writing out[1] needs room for two wide characters. */
     if (max < 2)
     {
-        out[0] = L'…';
-        out[1] = L'\0';
+        if (n >= 2)
+        {
+            out[0] = L'…';
+            out[1] = L'\0';
+        }
+        else
+            out[0] = L'\0';
         return;
     }
     keep = max - 1;
