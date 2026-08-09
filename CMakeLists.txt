@@ -21,6 +21,7 @@ endif()
 # Portable core: no Win32 anywhere in here. Linked by both the app and tests.
 add_library(treetop_core STATIC
     src/util/err.c
+    src/util/str.c
     src/render/format.c
     src/render/json.c
     src/model/table.c

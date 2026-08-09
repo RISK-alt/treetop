@@ -1,12 +1,5 @@
 #include "agent.h"
 
-#include <string.h>
-
-static wchar_t  lower(wchar_t c)
-{
-    return ((c >= L'A' && c <= L'Z') ? (wchar_t)(c + 32) : c);
-}
-
 /*
 ** Rule needles are short words ("amp", "goose", "codex", ...) and a bare
 ** substring search matches them inside unrelated longer words - "amp"
@@ -63,7 +56,7 @@ static int  contains_ci(const wchar_t *hay, const wchar_t *needle)
     for (i = 0; hay[i] != L'\0'; i++)
     {
         for (j = 0; needle[j] != L'\0'; j++)
-            if (lower(hay[i + j]) != lower(needle[j]))
+            if (tt_lower(hay[i + j]) != tt_lower(needle[j]))
                 break;
         if (needle[j] == L'\0'
             && (i == 0 || is_left_boundary(hay[i - 1]))

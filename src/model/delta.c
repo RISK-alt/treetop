@@ -1,7 +1,5 @@
 #include "process.h"
 
-#include <string.h>
-
 static const t_process  *find_prev(const t_table *prev, t_proc_key key)
 {
     size_t  i;

@@ -1,10 +1,5 @@
 #include "input.h"
 
-static wchar_t  lower(wchar_t c)
-{
-    return ((c >= L'A' && c <= L'Z') ? (wchar_t)(c + 32) : c);
-}
-
 static int  contains_ci(const wchar_t *hay, const wchar_t *needle)
 {
     size_t  i;
@@ -15,7 +10,7 @@ static int  contains_ci(const wchar_t *hay, const wchar_t *needle)
     for (i = 0; hay[i] != L'\0'; i++)
     {
         for (j = 0; needle[j] != L'\0'; j++)
-            if (lower(hay[i + j]) != lower(needle[j]))
+            if (tt_lower(hay[i + j]) != tt_lower(needle[j]))
                 break;
         if (needle[j] == L'\0')
             return (1);

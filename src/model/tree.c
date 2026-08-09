@@ -1,7 +1,5 @@
 #include "process.h"
 
-#include <string.h>
-
 /*
 ** A parent must predate its child. If the process currently holding the
 ** parent PID was created later, that PID has been recycled and the real
@@ -218,10 +216,7 @@ static int  wcs_ieq(const wchar_t *a, const wchar_t *b)
 {
     while (*a != L'\0' && *b != L'\0')
     {
-        wchar_t ca = (*a >= L'A' && *a <= L'Z') ? (wchar_t)(*a + 32) : *a;
-        wchar_t cb = (*b >= L'A' && *b <= L'Z') ? (wchar_t)(*b + 32) : *b;
-
-        if (ca != cb)
+        if (tt_lower(*a) != tt_lower(*b))
             return (0);
         a++;
         b++;
