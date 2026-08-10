@@ -30,6 +30,17 @@ add_compile_definitions(
     NTDDI_VERSION=0x0A000006
 )
 
+# README and docs/install.md both promise a single self-contained exe with
+# nothing to install alongside it. MSVC's default /MD does not deliver that:
+# it links vcruntime140.dll, which ships with the Visual C++ redistributable
+# and not with Windows, so a released /MD build would fail to start on a
+# clean machine with no diagnostic beyond a missing-DLL box. Static CRT
+# instead. The MinGW leg needs no equivalent: it targets UCRT, which is part
+# of Windows 10 and later. .github/workflows/release.yml checks the shipped
+# binary's imports against an allowlist so this promise stays machine-checked
+# rather than remembered.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 if(MSVC)
     add_compile_options(/W4 /WX /D_CRT_SECURE_NO_WARNINGS /utf-8)
 else()
