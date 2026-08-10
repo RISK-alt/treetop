@@ -168,6 +168,47 @@ jobs:
       - name: Build tests
         run: cmake --build build-asan --config Debug --target treetop_tests
 
+      # An instrumented binary links against clang_rt.asan_dynamic-x86_64.dll,
+      # which lives in the MSVC toolchain and is only on PATH inside a
+      # developer prompt. A GitHub step is not one. Without this the process
+      # blocks before main on a missing-DLL dialog and produces no output at
+      # all, which is what the first two attempts at this job did.
+      #
+      # The import list is printed rather than assumed: if this job ever fails
+      # again, the log says whether the runtime was found and whether the exe
+      # actually wanted it.
+      - name: Put the ASan runtime on PATH
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -property installationPath
+          $tools = Join-Path $vs 'VC\Tools\MSVC'
+
+          $exe = Get-ChildItem -Path build-asan -Recurse -Filter treetop_tests.exe |
+                 Select-Object -First 1
+          if (-not $exe) { throw "treetop_tests.exe not found under build-asan" }
+          Write-Host "test binary: $($exe.FullName)"
+
+          $dumpbin = Get-ChildItem -Path $tools -Recurse -Filter dumpbin.exe |
+                     Where-Object { $_.FullName -match 'Hostx64\\x64' } |
+                     Select-Object -First 1
+          if ($dumpbin) {
+              Write-Host "imports:"
+              & $dumpbin.FullName /nologo /dependents $exe.FullName |
+                Select-String -Pattern '^\s{4}(\S+\.dll)$' |
+                ForEach-Object { Write-Host "  $($_.Matches[0].Groups[1].Value)" }
+          }
+
+          $asan = Get-ChildItem -Path $tools -Recurse -Filter 'clang_rt.asan*x86_64.dll' -ErrorAction SilentlyContinue |
+                  Where-Object { $_.FullName -match 'Hostx64\\x64' } |
+                  Select-Object -First 1
+          if ($asan) {
+              Write-Host "ASan runtime: $($asan.FullName)"
+              Add-Content -Path $env:GITHUB_PATH -Value $asan.DirectoryName
+          } else {
+              Write-Host "::warning::No clang_rt.asan*x86_64.dll found under $tools"
+          }
+
       # The suite runs in well under a second uninstrumented, so anything
       # approaching this limit is a hang, not slow instrumentation.
       - name: Run tests under ASan
