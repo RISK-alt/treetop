@@ -178,6 +178,20 @@ Prerequisites and troubleshooting: **[docs/install.md](docs/install.md)**.
   qualified guess, not a certainty; check the image name before killing
   anything the ORPHAN marker flags.
 
+## Contributing
+
+Patches welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the build, the
+one structural rule worth knowing before you touch anything (the portable
+core contains no Win32, ever), why a process is identified by
+`(pid, create_time)` rather than by pid, and what CI will fail you on.
+
+Adding an agent to the detection table is a one-line change plus a test,
+and it is the change most likely to be worth making. There is an issue
+template for it if you would rather report than patch.
+
+For a security issue, see [SECURITY.md](SECURITY.md) rather than opening
+an issue.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
