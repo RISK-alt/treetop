@@ -21,8 +21,3 @@ compile_commands.json
 .vscode/
 *.swp
 *~
-
-# Local planning notes and scratch, never published
-.plans/
-.superpowers/
-.claude/
