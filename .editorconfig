@@ -1,0 +1,27 @@
+# The mechanical parts of this project's style, in the form editors read.
+# The CI enforces the same rules; see the style lint job in
+# .github/workflows/ci.yml and the Style section of CONTRIBUTING.md.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{c,h}]
+max_line_length = 80
+
+[*.ps1]
+# .gitattributes checks these out with CRLF; keep editors from fighting it.
+end_of_line = crlf
+
+[*.md]
+# Hard-wrapped prose, but trailing spaces are Markdown's line break, so
+# stripping them here would silently change the rendered output.
+trim_trailing_whitespace = false
+
+[*.{yml,yaml}]
+indent_size = 2

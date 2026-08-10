@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest something treetop should be able to do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The useful shape for this is the problem you hit, not the feature
+        you designed. A description of what you were trying to find out
+        and could not is easier to act on than a specification, and it
+        leaves room for a better answer than either of us has thought of.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What were you trying to find out?
+      description: >
+        The concrete situation. What was on your machine, what did you
+        want to know about it, and where did treetop leave you stuck?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you think would help
+      description: Optional. If you already have a shape in mind, describe it.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you did instead
+      description: >
+        Task Manager, `netstat -ano`, Process Explorer, a script? Knowing
+        what the workaround was says a lot about what the real gap is.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: >
+        treetop is a process viewer for people running coding agents.
+        CONTRIBUTING.md has the longer version of what that includes.
+      options:
+        - label: >
+            This helps answer one of: what did this session spawn, what is
+            holding that port, or what got left behind.
+          required: false

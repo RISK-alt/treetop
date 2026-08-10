@@ -1,0 +1,72 @@
+name: Agent not recognised
+description: treetop does not group an agent's processes into a session
+labels: ["agent-detection"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        treetop recognises agents from a table in `src/agent/rules.c`, one
+        line per agent. Adding one is a small change, and CONTRIBUTING.md
+        walks through it if you would rather send a PR than an issue.
+
+        Either way, the information below is what is needed, because the
+        hard part is not adding the rule. It is picking a needle that
+        matches the agent and nothing else: `amp` used to match Steam,
+        whose command line contains `-steampid=`.
+
+  - type: input
+    id: agent
+    attributes:
+      label: Which agent
+      placeholder: Codex CLI, Windsurf, something in-house
+    validations:
+      required: true
+
+  - type: textarea
+    id: processes
+    attributes:
+      label: What its processes look like
+      description: >
+        Run the agent, then run `treetop --json` and paste the entries for
+        its processes. Image name and full command line are the two things
+        that matter. Redact anything private; the shape is what counts,
+        not your paths.
+      render: json
+    validations:
+      required: true
+
+  - type: dropdown
+    id: identity
+    attributes:
+      label: Where is the agent's name visible?
+      description: >
+        Many agents run as node.exe with their real identity only in argv,
+        which is why matching on the image name alone is not enough.
+      options:
+        - In the executable name
+        - Only in the command line
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: needle
+    attributes:
+      label: Suggested match string
+      description: >
+        Lowercase, matched case-insensitively on token boundaries. Shorter
+        is riskier.
+      placeholder: youragent
+    validations:
+      required: false
+
+  - type: textarea
+    id: false-positives
+    attributes:
+      label: What else might that string match?
+      description: >
+        Think of an unrelated program whose command line could plausibly
+        contain it. If you cannot think of one, say so - that is a useful
+        answer too.
+    validations:
+      required: false
