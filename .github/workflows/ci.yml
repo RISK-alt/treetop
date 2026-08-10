@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Three separate tasks in this project's history independently introduced
+  # "# define" or "# include" (a space after the '#') into a .c file - house
+  # style reserves that spaced form for headers only, and every occurrence
+  # was caught by a human reading the diff. This job replaces that reading.
+  style-lint:
+    name: style lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v7
+
+      - name: Reject spaced preprocessor directives in .c files
+        shell: bash
+        run: |
+          set -eu
+          violations=$(grep -rnE '^#[[:space:]]+(define|include)' --include='*.c' --exclude-dir=.git --exclude-dir=build -- . || true)
+          if [ -n "$violations" ]; then
+            echo "Style rule violated: '#define' and '#include' in a .c file must have no space after '#'." >&2
+            echo "The spaced form ('# define' / '# include') is reserved for headers (.h) in this repository's house style." >&2
+            echo "Offending lines:" >&2
+            echo "$violations" >&2
+            exit 1
+          fi
+          echo "OK: no spaced preprocessor directives in any .c file."
+
+  # windows-latest ships MSVC but not MinGW-w64, so the mingw leg installs
+  # its own toolchain via MSYS2; the msvc leg uses what's already on the
+  # image. Both legs build with warnings as errors (see CMakeLists.txt), so
+  # a warning on either compiler fails the build, not just a test.
+  build:
+    name: build (${{ matrix.toolchain }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [mingw, msvc]
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v7
+
+      - name: Set up MinGW-w64 (UCRT64)
+        if: matrix.toolchain == 'mingw'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Configure (MinGW-w64)
+        if: matrix.toolchain == 'mingw'
+        shell: msys2 {0}
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (MinGW-w64)
+        if: matrix.toolchain == 'mingw'
+        shell: msys2 {0}
+        run: cmake --build build
+
+      - name: Test (MinGW-w64)
+        if: matrix.toolchain == 'mingw'
+        shell: msys2 {0}
+        run: ctest --test-dir build --output-on-failure
+
+      # No -G given: this picks up the Visual Studio generator already on
+      # windows-latest. -A x64 is explicit because the generator's default
+      # platform is not guaranteed to be 64-bit, and 64-bit is the target.
+      - name: Configure (MSVC)
+        if: matrix.toolchain == 'msvc'
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (MSVC)
+        if: matrix.toolchain == 'msvc'
+        run: cmake --build build --config Release
+
+      - name: Test (MSVC)
+        if: matrix.toolchain == 'msvc'
+        run: ctest --test-dir build -C Release --output-on-failure

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1188" height="510" viewBox="0 0 1188 510">
+<title>treetop - a real Claude Code session, isolated with the / filter</title>
+<rect x="0" y="0" width="1188" height="510" rx="8" fill="#0c0c0c"/>
+<rect x="0" y="0" width="1188" height="34" rx="8" fill="#1f1f1f"/>
+<rect x="0" y="26" width="1188" height="8" fill="#1f1f1f"/>
+<text x="16" y="22" font-family="Cascadia Mono, Consolas, 'JetBrains Mono', monospace" font-size="13" fill="#999999">treetop</text>
+<g font-family="Cascadia Mono, Consolas, 'JetBrains Mono', monospace" font-size="16px">
+<text x="18.00" y="67.60" fill="#cccccc" xml:space="preserve" textLength="1152.00" lengthAdjust="spacingAndGlyphs"> treetop  16 / 294 procs  1.0s  22:28:20                                                                                </text>
+<text x="18.00" y="87.60" fill="#cccccc" xml:space="preserve" textLength="48.00" lengthAdjust="spacingAndGlyphs">CPU [</text>
+<text x="66.00" y="87.60" fill="#00d700" xml:space="preserve" textLength="1027.20" lengthAdjust="spacingAndGlyphs">███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░</text>
+<text x="1093.20" y="87.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">]   2.6%</text>
+<text x="18.00" y="107.60" fill="#cccccc" xml:space="preserve" textLength="48.00" lengthAdjust="spacingAndGlyphs">MEM [</text>
+<text x="66.00" y="107.60" fill="#afd700" xml:space="preserve" textLength="1017.60" lengthAdjust="spacingAndGlyphs">██████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░</text>
+<text x="1083.60" y="107.60" fill="#cccccc" xml:space="preserve" textLength="86.40" lengthAdjust="spacingAndGlyphs">] 12G/31G</text>
+<text x="18.00" y="127.60" fill="#cccccc" xml:space="preserve" textLength="67.20" lengthAdjust="spacingAndGlyphs">Cores: </text>
+<text x="85.20" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▂</text>
+<text x="94.80" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="104.40" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="114.00" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="123.60" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="133.20" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="142.80" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="152.40" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="162.00" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="171.60" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="181.20" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="190.80" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="200.40" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="210.00" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="219.60" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="229.20" y="127.60" fill="#00d700" xml:space="preserve" textLength="9.60" lengthAdjust="spacingAndGlyphs">▁</text>
+<text x="18.00" y="147.60" fill="#cccccc" xml:space="preserve" textLength="1152.00" lengthAdjust="spacingAndGlyphs">    PID  CPU%▼    MEM PORTS     COMMAND                                                                                 </text>
+<rect x="18.00" y="154.00" width="1152.00" height="20.00" fill="#cccccc"/>
+<text x="18.00" y="167.60" fill="#0c0c0c" xml:space="preserve" textLength="1152.00" lengthAdjust="spacingAndGlyphs">   1692   0.0%   396K 49665     ├ wininit.exe —                                                                         </text>
+<text x="18.00" y="187.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">   1768 </text>
+<text x="94.80" y="187.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="187.60" fill="#cccccc" xml:space="preserve" textLength="326.40" lengthAdjust="spacingAndGlyphs">   4.1M 49675       └ services.exe</text>
+<text x="478.80" y="187.60" fill="#626262" xml:space="preserve" textLength="19.20" lengthAdjust="spacingAndGlyphs"> —</text>
+<text x="498.00" y="187.60" fill="#cccccc" xml:space="preserve" textLength="672.00" lengthAdjust="spacingAndGlyphs">                                                                      </text>
+<text x="18.00" y="207.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">   2004 </text>
+<text x="94.80" y="207.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="207.60" fill="#cccccc" xml:space="preserve" textLength="336.00" lengthAdjust="spacingAndGlyphs">    10M               └ svchost.exe</text>
+<text x="488.40" y="207.60" fill="#626262" xml:space="preserve" textLength="19.20" lengthAdjust="spacingAndGlyphs"> —</text>
+<text x="507.60" y="207.60" fill="#cccccc" xml:space="preserve" textLength="662.40" lengthAdjust="spacingAndGlyphs">                                                                     </text>
+<text x="18.00" y="227.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  26416 </text>
+<text x="94.80" y="227.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="227.60" fill="#cccccc" xml:space="preserve" textLength="1017.60" lengthAdjust="spacingAndGlyphs">   110M                 └ WindowsTerminal -Embedding                                                      </text>
+<text x="18.00" y="247.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  15356 </text>
+<text x="94.80" y="247.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="247.60" fill="#cccccc" xml:space="preserve" textLength="1017.60" lengthAdjust="spacingAndGlyphs">   2.4M                   ├ powershell                                                                    </text>
+<text x="18.00" y="267.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  20844 </text>
+<text x="94.80" y="267.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="267.60" fill="#cccccc" xml:space="preserve" textLength="288.00" lengthAdjust="spacingAndGlyphs">   442M          ▼          └ </text>
+<text x="440.40" y="267.60" fill="#3A96DD" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">claude</text>
+<text x="498.00" y="267.60" fill="#cccccc" xml:space="preserve" textLength="672.00" lengthAdjust="spacingAndGlyphs">                                                                      </text>
+<text x="18.00" y="287.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  17776 </text>
+<text x="94.80" y="287.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="287.60" fill="#cccccc" xml:space="preserve" textLength="998.40" lengthAdjust="spacingAndGlyphs">   828K                       └ bash -c &quot;source /c/Users/you/.claude/shell-snapshots/snapshot-bash-1786…</text>
+<text x="18.00" y="307.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  23336 </text>
+<text x="94.80" y="307.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="307.60" fill="#cccccc" xml:space="preserve" textLength="998.40" lengthAdjust="spacingAndGlyphs">   1.9M                         └ bash -c &quot;source /c/Users/you/.claude/shell-snapshots/snapshot-bash-17…</text>
+<text x="18.00" y="327.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  11488 </text>
+<text x="94.80" y="327.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="327.60" fill="#cccccc" xml:space="preserve" textLength="998.40" lengthAdjust="spacingAndGlyphs">   1.7M                           └ bash -c &quot;source /c/Users/you/.claude/shell-snapshots/snapshot-bash-…</text>
+<text x="18.00" y="347.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  30312 </text>
+<text x="94.80" y="347.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="347.60" fill="#cccccc" xml:space="preserve" textLength="1017.60" lengthAdjust="spacingAndGlyphs">   2.3M                             └ capture frame.txt                                                   </text>
+<text x="18.00" y="367.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  30220 </text>
+<text x="94.80" y="367.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="367.60" fill="#cccccc" xml:space="preserve" textLength="1017.60" lengthAdjust="spacingAndGlyphs">    40M                   └ powershell                                                                    </text>
+<text x="18.00" y="387.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  15840 </text>
+<text x="94.80" y="387.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.2%</text>
+<text x="152.40" y="387.60" fill="#cccccc" xml:space="preserve" textLength="288.00" lengthAdjust="spacingAndGlyphs">   352M          ▼          └ </text>
+<text x="440.40" y="387.60" fill="#3A96DD" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">claude</text>
+<text x="498.00" y="387.60" fill="#cccccc" xml:space="preserve" textLength="672.00" lengthAdjust="spacingAndGlyphs">                                                                      </text>
+<text x="18.00" y="407.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">   2840 </text>
+<text x="94.80" y="407.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="407.60" fill="#cccccc" xml:space="preserve" textLength="1017.60" lengthAdjust="spacingAndGlyphs">   143M           └ explorer                                                                              </text>
+<text x="18.00" y="427.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  19472 </text>
+<text x="94.80" y="427.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="427.60" fill="#cccccc" xml:space="preserve" textLength="1017.60" lengthAdjust="spacingAndGlyphs">   202M             └ brave                                                                               </text>
+<text x="18.00" y="447.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">  29088 </text>
+<text x="94.80" y="447.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="447.60" fill="#cccccc" xml:space="preserve" textLength="998.40" lengthAdjust="spacingAndGlyphs">   2.2M               └ cmd /d /s /c &quot;&quot;C:\Users\you\.claude\chrome\chrome-native-host.bat&quot; chrome-exten…</text>
+<text x="18.00" y="467.60" fill="#cccccc" xml:space="preserve" textLength="76.80" lengthAdjust="spacingAndGlyphs">   4320 </text>
+<text x="94.80" y="467.60" fill="#00d700" xml:space="preserve" textLength="57.60" lengthAdjust="spacingAndGlyphs">  0.0%</text>
+<text x="152.40" y="467.60" fill="#cccccc" xml:space="preserve" textLength="249.60" lengthAdjust="spacingAndGlyphs">    80M          ▼      └ </text>
+<text x="402.00" y="467.60" fill="#3A96DD" xml:space="preserve" textLength="259.20" lengthAdjust="spacingAndGlyphs">claude --chrome-native-host</text>
+<text x="661.20" y="467.60" fill="#cccccc" xml:space="preserve" textLength="508.80" lengthAdjust="spacingAndGlyphs">                                                     </text>
+<text x="18.00" y="487.60" fill="#cccccc" xml:space="preserve" textLength="1152.00" lengthAdjust="spacingAndGlyphs">filter: claude  (Esc clears)                                                                                            </text>
+</g>
+</svg>
