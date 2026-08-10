@@ -7,6 +7,13 @@ on:
 permissions:
   contents: read
 
+# A second push to the same branch makes the first run's answer irrelevant.
+# main is excluded: those runs are the record of what the tip actually did,
+# and cancelling one leaves a gap nobody goes back to fill.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   # Three separate tasks in this project's history independently introduced
   # "# define" or "# include" (a space after the '#') into a .c file - house
@@ -33,17 +40,57 @@ jobs:
           fi
           echo "OK: no spaced preprocessor directives in any .c file."
 
+      - name: Reject tabs and trailing whitespace in sources
+        shell: bash
+        run: |
+          set -eu
+          status=0
+          tabs=$(grep -rnP '\t' --include='*.c' --include='*.h' --exclude-dir=.git --exclude-dir=build --exclude-dir=build-asan -- . || true)
+          if [ -n "$tabs" ]; then
+            echo "Tabs found in a source file. This project indents with four spaces." >&2
+            echo "$tabs" >&2
+            status=1
+          fi
+          trailing=$(grep -rnE '[[:space:]]+$' --include='*.c' --include='*.h' --exclude-dir=.git --exclude-dir=build --exclude-dir=build-asan -- . || true)
+          if [ -n "$trailing" ]; then
+            echo "Trailing whitespace found." >&2
+            echo "$trailing" >&2
+            status=1
+          fi
+          if [ "$status" -eq 0 ]; then
+            echo "OK: no tabs, no trailing whitespace."
+          fi
+          exit "$status"
+
+      - name: Reject lines over 80 columns in sources
+        shell: bash
+        run: |
+          set -eu
+          long=$(grep -rnE '.{81,}' --include='*.c' --include='*.h' --exclude-dir=.git --exclude-dir=build --exclude-dir=build-asan -- . || true)
+          if [ -n "$long" ]; then
+            echo "Lines longer than 80 columns found. This project wraps at 80." >&2
+            echo "$long" >&2
+            exit 1
+          fi
+          echo "OK: nothing over 80 columns."
+
   # windows-latest ships MSVC but not MinGW-w64, so the mingw leg installs
   # its own toolchain via MSYS2; the msvc leg uses what's already on the
   # image. Both legs build with warnings as errors (see CMakeLists.txt), so
   # a warning on either compiler fails the build, not just a test.
+  #
+  # Both configurations are built because they are not the same code: Release
+  # defines NDEBUG and optimises, and the two compilers warn about different
+  # things at different optimisation levels. Release is what ships; Debug is
+  # what a contributor bisects with.
   build:
-    name: build (${{ matrix.toolchain }})
+    name: build (${{ matrix.toolchain }}, ${{ matrix.config }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         toolchain: [mingw, msvc]
+        config: [Debug, Release]
     steps:
       - name: Check out ${{ github.repository }}
         uses: actions/checkout@v7
@@ -62,7 +109,7 @@ jobs:
       - name: Configure (MinGW-w64)
         if: matrix.toolchain == 'mingw'
         shell: msys2 {0}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.config }}
 
       - name: Build (MinGW-w64)
         if: matrix.toolchain == 'mingw'
@@ -79,12 +126,36 @@ jobs:
       # platform is not guaranteed to be 64-bit, and 64-bit is the target.
       - name: Configure (MSVC)
         if: matrix.toolchain == 'msvc'
-        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=${{ matrix.config }}
 
       - name: Build (MSVC)
         if: matrix.toolchain == 'msvc'
-        run: cmake --build build --config Release
+        run: cmake --build build --config ${{ matrix.config }}
 
       - name: Test (MSVC)
         if: matrix.toolchain == 'msvc'
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+
+  # The unit tests exercise the portable core, which is where the buffer
+  # arithmetic lives: fixed-width column packing, wide-string truncation,
+  # JSON escaping. Those are the places an off-by-one writes past the end of
+  # an array rather than producing a wrong answer, and a wrong answer is the
+  # only kind an ordinary test run can see. ASan sees the other kind.
+  sanitize:
+    name: address sanitizer
+    runs-on: windows-latest
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v7
+
+      - name: Configure with ASan (MSVC)
+        run: >
+          cmake -S . -B build-asan -A x64
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_FLAGS="/fsanitize=address"
+
+      - name: Build tests
+        run: cmake --build build-asan --config Debug --target treetop_tests
+
+      - name: Run tests under ASan
+        run: ctest --test-dir build-asan -C Debug --output-on-failure
