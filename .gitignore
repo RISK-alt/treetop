@@ -1,0 +1,23 @@
+# Build output
+build/
+out/
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.o
+*.a
+*.lib
+*.exp
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# Editors
+.vs/
+.vscode/
+*.swp
+*~

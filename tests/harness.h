@@ -1,0 +1,62 @@
+#pragma once
+
+# include <stdio.h>
+# include <string.h>
+# include <wchar.h>
+
+# include "process.h"
+
+extern int  g_tt_run;
+extern int  g_tt_fail;
+
+t_process   mk_proc(unsigned long pid, unsigned long long ct,
+                    unsigned long ppid, const wchar_t *image);
+
+/*
+** Strips SGR escape sequences (\x1b[...m) and carriage returns, counting
+** only what would actually occupy a terminal cell. Shared by every suite
+** that measures a rendered line's width - defined once in test_frame.c so
+** no second, possibly-drifting copy of the stripping logic exists.
+*/
+size_t      visible_len(const wchar_t *s);
+
+# define TT_CHECK(cond)                                                       \
+    do {                                                                      \
+        g_tt_run++;                                                           \
+        if (!(cond)) {                                                        \
+            g_tt_fail++;                                                      \
+            fprintf(stderr, "  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); \
+        }                                                                     \
+    } while (0)
+
+# define TT_EQ_INT(a, b)                                                      \
+    do {                                                                      \
+        long long _a = (long long)(a), _b = (long long)(b);                   \
+        g_tt_run++;                                                           \
+        if (_a != _b) {                                                       \
+            g_tt_fail++;                                                      \
+            fprintf(stderr, "  FAIL %s:%d  %s == %s  (%lld vs %lld)\n",       \
+                    __FILE__, __LINE__, #a, #b, _a, _b);                      \
+        }                                                                     \
+    } while (0)
+
+# define TT_EQ_DBL(a, b, eps)                                                 \
+    do {                                                                      \
+        double _a = (double)(a), _b = (double)(b);                            \
+        g_tt_run++;                                                           \
+        if ((_a - _b) > (eps) || (_b - _a) > (eps)) {                         \
+            g_tt_fail++;                                                      \
+            fprintf(stderr, "  FAIL %s:%d  %s == %s  (%f vs %f)\n",           \
+                    __FILE__, __LINE__, #a, #b, _a, _b);                      \
+        }                                                                     \
+    } while (0)
+
+# define TT_EQ_WSTR(a, b)                                                     \
+    do {                                                                      \
+        g_tt_run++;                                                           \
+        if (wcscmp((a), (b)) != 0) {                                          \
+            g_tt_fail++;                                                      \
+            fprintf(stderr, "  FAIL %s:%d  %s == %s  (\"%ls\" vs \"%ls\")\n", \
+                    __FILE__, __LINE__, #a, #b, (a), (b));                    \
+        }                                                                     \
+    } while (0)

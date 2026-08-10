@@ -1,0 +1,146 @@
+#pragma once
+
+/*                                  INCLUDES                                  */
+
+# include "platform.h"
+# include "input.h"
+# include "app.h"
+# include <stdio.h>
+
+/*                                 FORMATTING                                 */
+
+void        fmt_bytes(unsigned long long bytes, wchar_t *out, size_t n);
+void        fmt_duration(unsigned long long secs, wchar_t *out, size_t n);
+void        fmt_shorten(const wchar_t *src, size_t max, wchar_t *out, size_t n);
+
+/*
+** COMMAND-column specific: image's stem (basename, ".exe" stripped) plus
+** whatever in cmdline follows argv[0], right-truncated with a trailing
+** ellipsis when it does not fit. Unlike fmt_shorten - correct for a bare
+** PATH, whose meaning lives in the tail - a command line is read left to
+** right with the identifying token (the program name) at the front, so
+** cutting the front off there erases exactly the part that says what a
+** row is. When cmdline carries no argument tail at all, the "command" IS
+** just a name/path and this defers to fmt_shorten's left-truncation
+** instead - at that point the tail genuinely is what identifies it.
+*/
+void        fmt_command(const wchar_t *image, const wchar_t *cmdline,
+                size_t max, wchar_t *out, size_t n);
+
+/*                                   JSON                                     */
+
+void        json_escape(const wchar_t *src, wchar_t *out, size_t n);
+size_t      json_utf8_encode(const wchar_t *src, char *out, size_t n);
+void        json_emit(const t_table *tbl, const t_sysinfo *sys, FILE *out);
+
+/*                                    FRAME                                   */
+
+/*
+** A growable wide-character output buffer that one frame's worth of
+** rendering is built into before a single con_write() puts it on screen.
+** buf is deliberately never NUL-terminated by any of these calls - the
+** length is always f->len, exactly as con_write() wants it, and a caller
+** that needs a C string (tests inspecting buf directly) must terminate it
+** itself.
+*/
+typedef struct s_frame
+{
+    wchar_t     *buf;
+    size_t      len;
+    size_t      cap;
+}   t_frame;
+
+int         frame_init(t_frame *f, size_t cap);
+void        frame_free(t_frame *f);
+void        frame_reset(t_frame *f);
+void        frame_puts(t_frame *f, const wchar_t *s);
+void        frame_printf(t_frame *f, const wchar_t *fmt, ...);
+void        frame_pad(t_frame *f, int n);
+
+/*                                   METERS                                   */
+
+void        draw_meters(t_frame *f, const t_sysinfo *sys, int cols);
+
+/*                                   TABLE                                    */
+
+/*
+** Draws rows[top .. top + rows_avail) - the caller owns scrolling and
+** picks top; this function only windows into the array it is given. sel
+** is a row index into the FULL rows array (not the visible window), so a
+** selection above or below the current window simply does not draw
+** inverted this frame, which is exactly what scrolling the window to
+** follow the selection relies on.
+*/
+void        draw_table(t_frame *f, t_process **rows, size_t n, size_t sel,
+                int top, int cols, int rows_avail, const t_view *v);
+
+/*
+** One line labelling draw_table's own columns (PID, CPU%, MEM, PORTS,
+** COMMAND) at the same fixed widths draw_row itself uses, with a small
+** triangle marking whichever column `sort` currently names and pointing
+** the way `sort_desc` does - the only on-screen indication of which of
+** F6/</>'s four sort orders is active. Lives in src/render/table.c,
+** beside draw_row/draw_table, since it shares their column-width
+** constants directly.
+*/
+void        draw_table_header(t_frame *f, int cols, t_sort_mode sort,
+                int sort_desc);
+
+/*                                   CHROME                                   */
+
+/*
+** draw_header/draw_footer/draw_help/render_all all live in
+** src/render/chrome.c, which is Win32-free and built into treetop_core
+** for exactly the reason format.c, frame.c, meters.c and table.c
+** already are: the test binary must be able to exercise a rendered
+** frame without a live console.
+**
+** t_app already carries a `limited` field, set once by app_init() from
+** plat_limited(). draw_header/render_all still take `limited` as an
+** explicit parameter rather than reading a->limited themselves, because
+** plat_limited() (and, by extension, "is this app instance degraded")
+** is platform state - this file may read whatever a caller hands it in
+** a plain struct, but it must never be the one place that decides
+** a->limited is the trustworthy field to read, the same way it is never
+** the one that calls plat_limited() directly. The caller in src/main.c
+** (Task 19) is the only place that owns that decision.
+**
+** draw_header's `visible_count` is the row count AFTER the current view
+** (text filter, agents-only, orphans-only) is applied - i.e. exactly
+** what draw_table is about to show. render_all computes this once (it
+** already has to run view_flatten() for the table) and passes it in,
+** rather than draw_header re-deriving it, so there is exactly one
+** view_flatten() call per frame. When it differs from a->cur.count the
+** header shows "N / M procs" instead of the bare total, so a narrowed
+** view is never silently claiming to show more than it does.
+*/
+void        draw_header(t_frame *f, const t_app *a, int cols, int limited,
+                size_t visible_count);
+void        draw_footer(t_frame *f, const t_app *a, int cols);
+void        draw_help(t_frame *f, int cols, int rows);
+
+/*
+** The Task 20 kill confirmation overlay: `title` is caller-composed
+** (e.g. "kill process 1234 (notepad.exe)?" or "kill subtree - 3
+** processes?" - see render_all's own confirm_resolve_and_draw()) and is
+** always shown in full if the box can be drawn at all, together with the
+** "Terminate? [y/N]" prompt, even when there is no room for a single
+** victim line - see the brief's own ambiguity resolution #3. `victims`
+** lists whichever of the confirmed keys still resolve against the
+** CURRENT table (render_all re-resolves every frame; a victim that has
+** since exited simply is not in this array, it is never drawn as "about
+** to die" once it no longer exists). `n` victim lines are shown in the
+** order given - the caller is responsible for that being deepest-first
+** for a subtree kill - up to however many the box has room for; the rest
+** collapse into a single "... and N more" line rather than being
+** silently dropped, so the count in the title is never a lie about what
+** the visible rows show. Below the same minimum viable box size
+** draw_help() uses (cols < 5 or rows < 4 here - one extra row versus
+** draw_help's 3, since title AND prompt both need a guaranteed line) this
+** draws `rows` blank lines of `cols` spaces instead, exactly like
+** draw_help()'s own "a malformed box is worse than no box" rule.
+*/
+void        draw_confirm(t_frame *f, const wchar_t *title,
+                t_process **victims, size_t n, int cols, int rows);
+void        render_all(t_frame *f, t_app *a, int cols, int rows,
+                int limited);

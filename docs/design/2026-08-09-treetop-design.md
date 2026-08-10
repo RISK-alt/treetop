@@ -1,7 +1,9 @@
 # treetop — Design
 
 Date: 2026-08-09
-Status: approved, not yet implemented
+Status: this is the original design, written before implementation began;
+it is kept as a record of intent, not updated to match what shipped - see
+the git history for that.
 
 ## 1. What this is
 
