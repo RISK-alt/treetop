@@ -144,18 +144,31 @@ jobs:
   sanitize:
     name: address sanitizer
     runs-on: windows-latest
+    # A sanitizer failure can present as a hang rather than a diagnostic: an
+    # instrumented binary that cannot load its runtime raises a dialog, and a
+    # dialog on a headless runner waits for a click that never comes. Bound
+    # it, so that failure mode costs minutes rather than the job's default.
+    timeout-minutes: 15
     steps:
       - name: Check out ${{ github.repository }}
         uses: actions/checkout@v7
 
+      # CMakeLists.txt pins the static CRT because the *shipped* exe has to
+      # run on a machine with nothing installed. That requirement does not
+      # apply here - this build is unit tests that never leave the runner -
+      # and MSVC's ASan expects the dynamic CRT, so it is overridden for this
+      # build directory only. Left on /MT, the instrumented tests hang.
       - name: Configure with ASan (MSVC)
         run: >
           cmake -S . -B build-asan -A x64
           -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
           -DCMAKE_C_FLAGS="/fsanitize=address"
 
       - name: Build tests
         run: cmake --build build-asan --config Debug --target treetop_tests
 
+      # The suite runs in well under a second uninstrumented, so anything
+      # approaching this limit is a hang, not slow instrumentation.
       - name: Run tests under ASan
-        run: ctest --test-dir build-asan -C Debug --output-on-failure
+        run: ctest --test-dir build-asan -C Debug --output-on-failure --timeout 180

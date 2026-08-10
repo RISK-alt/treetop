@@ -39,7 +39,14 @@ add_compile_definitions(
 # of Windows 10 and later. .github/workflows/release.yml checks the shipped
 # binary's imports against an allowlist so this promise stays machine-checked
 # rather than remembered.
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+#
+# Guarded rather than set outright: a plain set() shadows the cache variable
+# -D writes, so setting it unconditionally would silently ignore anyone who
+# asked for something else on the command line. The sanitizer job needs
+# exactly that, because MSVC's ASan expects the dynamic CRT.
+if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 if(MSVC)
     add_compile_options(/W4 /WX /D_CRT_SECURE_NO_WARNINGS /utf-8)

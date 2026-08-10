@@ -141,7 +141,8 @@ static void test_json_emit_shape_and_edge_cases(void)
     }
 
     /* NULL cmdline -> JSON null, never the four characters "(null)". */
-    TT_CHECK(strstr(buf, "\"pid\": 300, \"ppid\": 4, \"image\": \"System.exe\", "
+    TT_CHECK(strstr(buf,
+            "\"pid\": 300, \"ppid\": 4, \"image\": \"System.exe\", "
             "\"cmdline\": null") != NULL);
     TT_CHECK(strstr(buf, "(null)") == NULL);
 
