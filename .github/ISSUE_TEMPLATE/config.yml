@@ -1,0 +1,16 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation trouble
+    url: https://github.com/risk-alt/treetop/blob/main/docs/install.md
+    about: >
+      SmartScreen warnings, PATH setup, terminal font, and building from
+      source are all covered in the install guide. Check there first.
+  - name: Question or idea
+    url: https://github.com/risk-alt/treetop/discussions
+    about: >
+      For anything that is not a defect and not a specific request. Ask
+      here rather than opening an issue.
+  - name: Security issue
+    url: https://github.com/risk-alt/treetop/security/advisories/new
+    about: >
+      Report privately. Do not open a public issue for a security problem.

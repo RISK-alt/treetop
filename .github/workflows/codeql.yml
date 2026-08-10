@@ -1,0 +1,47 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (c-cpp)
+    # Code scanning needs GitHub Advanced Security on a private repository,
+    # and this one is free-tier. Rather than have every run fail red until
+    # that changes, the job stays dormant and starts analysing by itself the
+    # moment the repository becomes public. Both push and pull_request carry
+    # the repository object, so this condition is always answerable.
+    if: github.event.repository.visibility == 'public'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v7
+
+      # build-mode: manual rather than autobuild. This project builds through
+      # CMake with a specific generator and platform, and CodeQL needs to
+      # observe the same compilations CI does, not a guess at how to build it.
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+          queries: security-and-quality
+
+      - name: Build for analysis
+        run: |
+          cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:c-cpp"

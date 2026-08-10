@@ -1,0 +1,93 @@
+name: Bug report
+description: Something treetop does is wrong, or it will not run
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before anything else: if the problem is about what treetop *shows*
+        you, `treetop --json` is worth more than a screenshot, and it is
+        what will get asked for. It is plain text and safe to paste, but
+        read it first, because it contains full command lines from your
+        machine and those sometimes carry paths or tokens you would rather
+        not publish.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: treetop version
+      description: The output of `treetop --version`.
+      placeholder: treetop 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: Where the binary came from
+      options:
+        - Downloaded from Releases
+        - Built from source with MSVC
+        - Built from source with MinGW-w64
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: >
+        Run `winver`, or paste the output of
+        `(Get-CimInstance Win32_OperatingSystem).Caption` plus
+        `[Environment]::OSVersion.Version`.
+      placeholder: Windows 11 Home 10.0.26200
+    validations:
+      required: true
+
+  - type: dropdown
+    id: terminal
+    attributes:
+      label: Which terminal
+      description: >
+        This matters more than it looks. treetop draws with VT escape
+        sequences and uses the alternate screen buffer, and the old
+        console host handles both differently from Windows Terminal.
+      options:
+        - Windows Terminal
+        - Console host (conhost, the classic black window)
+        - VS Code integrated terminal
+        - Windows PowerShell ISE
+        - Other (say which in the description)
+    validations:
+      required: true
+
+  - type: textarea
+    id: selftest
+    attributes:
+      label: Output of `treetop --selftest`
+      description: >
+        This runs every platform call against your live system and reports
+        each one. It usually identifies the failing layer on its own.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: json
+    attributes:
+      label: Relevant part of `treetop --json`
+      description: >
+        If the bug is about a process, a port, a session or an orphan being
+        shown wrongly, the entry for it. Trim it to what is relevant, and
+        redact anything private in the command lines.
+      render: json
+    validations:
+      required: false

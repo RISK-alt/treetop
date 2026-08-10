@@ -1,0 +1,14 @@
+# Every pull request gets a review request. One maintainer, so this is
+# less about ownership than about not letting a PR sit unnoticed.
+*                       @RISK-alt
+
+# The two places where a wrong change is expensive and quiet: the platform
+# layer, which no test reaches, and the identity/tree model, where a bug
+# means acting on the wrong process rather than showing a wrong number.
+/src/platform/          @RISK-alt
+/src/model/tree.c       @RISK-alt
+/src/model/delta.c      @RISK-alt
+
+# Changing these changes what gets published and how it is verified.
+/.github/workflows/     @RISK-alt
+/CMakeLists.txt         @RISK-alt

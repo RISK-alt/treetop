@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # The only dependencies this project has are the actions in its own
+  # workflows. There is no package manager to watch: the program links
+  # against Windows itself and vendors nothing.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
