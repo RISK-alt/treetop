@@ -14,7 +14,25 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out ${{ github.repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      # A tag is the only thing that says which version this is to anyone
+      # downloading it, and TT_VERSION is the only thing that says it to
+      # anyone already running it. If those two disagree, whichever one you
+      # trust is wrong, and you find out from a bug report months later.
+      - name: Check the tag matches TT_VERSION
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          $header = Get-Content include\treetop.h -Raw
+          if ($header -notmatch 'TT_VERSION\s+L"([^"]+)"') {
+              throw "Could not find TT_VERSION in include/treetop.h"
+          }
+          $declared = $Matches[1]
+          Write-Host "tag: $tag / TT_VERSION: $declared"
+          if ($tag -ne $declared) {
+              throw "Tag v$tag does not match TT_VERSION $declared. Bump include/treetop.h, or retag."
+          }
 
       - name: Configure (MSVC, Release)
         run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
@@ -24,6 +42,52 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      # docs/install.md and the README both promise one file with nothing to
+      # install beside it. That promise is a property of the link, so check
+      # the link rather than trusting it: every DLL the exe imports must be
+      # one Windows itself provides. This is what catches a build that picked
+      # up the dynamic CRT (vcruntime140.dll, from the Visual C++
+      # redistributable) or a MinGW build that picked up libgcc_s / libwinpthread.
+      - name: Verify the binary is self-contained
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -property installationPath
+          $dumpbin = Get-ChildItem -Path "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+                     Where-Object { $_.FullName -match 'Hostx64\\x64' } |
+                     Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found under $vs" }
+
+          $imports = & $dumpbin.FullName /nologo /dependents build\Release\treetop.exe |
+                     Select-String -Pattern '^\s{4}(\S+\.dll)$' |
+                     ForEach-Object { $_.Matches[0].Groups[1].Value.ToLower() }
+
+          Write-Host "Imported DLLs:"
+          $imports | ForEach-Object { Write-Host "  $_" }
+
+          # Everything here ships with Windows 10 1809 or later, which is the
+          # floor CMakeLists.txt pins and the docs promise. Anything outside
+          # this set is something the user would have to install first.
+          $shipsWithWindows = @(
+            'kernel32.dll','kernelbase.dll','ntdll.dll','advapi32.dll','sechost.dll',
+            'user32.dll','gdi32.dll','shell32.dll','shlwapi.dll','ole32.dll',
+            'oleaut32.dll','combase.dll','rpcrt4.dll','version.dll','winmm.dll',
+            'ws2_32.dll','iphlpapi.dll','psapi.dll','secur32.dll','userenv.dll',
+            'bcrypt.dll','bcryptprimitives.dll','crypt32.dll','ucrtbase.dll','msvcrt.dll'
+          )
+
+          $foreign = $imports | Where-Object {
+              $_ -notin $shipsWithWindows -and
+              $_ -notlike 'api-ms-win-*' -and
+              $_ -notlike 'ext-ms-win-*'
+          }
+
+          if ($foreign) {
+              Write-Host "::error::These imports do not ship with Windows: $($foreign -join ', ')"
+              throw "treetop.exe is not self-contained. The README and install guide promise one file with no runtime to install; this build breaks that promise."
+          }
+          Write-Host "OK: every import ships with Windows."
 
       - name: Compute SHA256
         shell: pwsh
@@ -50,6 +114,11 @@ jobs:
 
           **SHA256:** ``$env:TREETOP_SHA256``
           (also attached below as ``treetop.exe.sha256``, in ``sha256sum`` format)
+
+          x64, Windows 10 1809 or later. Built from this tag by
+          [the release workflow]($repoUrl/blob/main/.github/workflows/release.yml),
+          which fails the build if the exe imports anything Windows does not
+          already provide.
 
           ## About the SmartScreen warning
 
