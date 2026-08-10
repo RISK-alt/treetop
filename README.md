@@ -3,7 +3,9 @@
 A terminal process-tree monitor for Windows, for people who run coding
 agents.
 
-![treetop showing a real Claude Code session on this machine, isolated with the / filter](docs/treetop.svg)
+[![CI](https://github.com/risk-alt/treetop/actions/workflows/ci.yml/badge.svg)](https://github.com/risk-alt/treetop/actions/workflows/ci.yml)
+
+![treetop showing a live Claude Code session, isolated with the / filter](docs/treetop.svg)
 
 ## The problem
 
