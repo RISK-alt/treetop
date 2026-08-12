@@ -190,7 +190,8 @@ and it is the change most likely to be worth making. There is an issue
 template for it if you would rather report than patch.
 
 For a security issue, see [SECURITY.md](SECURITY.md) rather than opening
-an issue.
+an issue. Participation here is covered by
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Licence
 

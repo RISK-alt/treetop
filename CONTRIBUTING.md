@@ -226,6 +226,14 @@ the maintainer will ask for.
 If you have found a security issue, do not open an issue. See
 [SECURITY.md](SECURITY.md).
 
+## Conduct
+
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) applies to issues, pull requests
+and discussions here. It is the Contributor Covenant, unmodified except
+for saying where a report goes, and it exists so that the answer to "what
+happens if someone behaves badly" is written down before it is needed
+rather than improvised afterwards.
+
 ## Licence
 
 By contributing, you agree that your contributions are licensed under the
