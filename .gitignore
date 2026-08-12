@@ -22,3 +22,11 @@ compile_commands.json
 .vscode/
 *.swp
 *~
+
+# Local planning notes, agent scratch and tool state. None of this is part
+# of the project, and all of it is one `git add -A` away from being
+# published. Ignoring it here rather than only in .git/info/exclude means
+# a fresh clone is protected too, not just the machine that set it up.
+.plans/
+.superpowers/
+.claude/
