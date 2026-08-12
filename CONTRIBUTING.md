@@ -203,6 +203,7 @@ Every push and pull request gets:
 | build (mingw, Debug and Release) | GCC, warnings as errors |
 | build (msvc, Debug and Release) | MSVC `/W4 /WX`, warnings as errors |
 | address sanitizer | Unit tests under MSVC ASan |
+| CodeQL | Static analysis, `security-and-quality` queries |
 
 Both compilers build with warnings as errors, so a warning on either one
 fails the build. That is deliberate: the two disagree often enough about
