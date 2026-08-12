@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # This job spent the whole private phase skipped by the condition below,
+  # so the first time it really analyses anything will be the first time it
+  # has ever run. Manual dispatch makes that first run something to trigger
+  # deliberately, right after the repository goes public, rather than a
+  # surprise attached to whatever the next push happens to be.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,8 +21,9 @@ jobs:
     # Code scanning needs GitHub Advanced Security on a private repository,
     # and this one is free-tier. Rather than have every run fail red until
     # that changes, the job stays dormant and starts analysing by itself the
-    # moment the repository becomes public. Both push and pull_request carry
-    # the repository object, so this condition is always answerable.
+    # moment the repository becomes public. push, pull_request and
+    # workflow_dispatch all carry the repository object, so this condition
+    # is answerable on every event that can start this workflow.
     if: github.event.repository.visibility == 'public'
     runs-on: windows-latest
     permissions:
