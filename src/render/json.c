@@ -323,15 +323,25 @@ static void write_process(FILE *out, const t_process *p)
 void    json_emit(const t_table *tbl, const t_sysinfo *sys, FILE *out)
 {
     time_t      now;
-    struct tm   *utc;
+    struct tm   utc;
     char        ts[32];
     size_t      i;
     int         first;
 
+    /*
+    ** gmtime_s rather than gmtime: gmtime hands back a pointer into
+    ** storage shared by the whole process, so its result is only stable
+    ** until the next call from anywhere. Nothing in treetop makes a
+    ** second call today, and nothing is threaded, so this is a property
+    ** worth keeping rather than a bug being fixed - the failure it
+    ** prevents is the one where a later change adds a caller and this
+    ** timestamp silently becomes someone else's. The _s form writes into
+    ** a local, which cannot be aliased, and returns non-zero rather than
+    ** NULL on failure.
+    */
     now = time(NULL);
-    utc = gmtime(&now);
-    if (utc != NULL)
-        strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", utc);
+    if (gmtime_s(&utc, &now) == 0)
+        strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &utc);
     else
         strcpy(ts, "1970-01-01T00:00:00Z");
     fputs("{\n", out);
