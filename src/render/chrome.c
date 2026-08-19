@@ -81,7 +81,7 @@ void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
     wchar_t         procsbuf[48];
     wchar_t         refreshbuf[24];
     time_t          now;
-    struct tm       *tmv;
+    struct tm       tmv;
     int             avail;
     int             len;
 
@@ -137,11 +137,18 @@ void    draw_header(t_frame *f, const t_app *a, int cols, int limited,
         frame_puts(f, refreshbuf);
         avail -= len;
     }
+    /*
+    ** localtime_s rather than localtime, which returns a pointer into a
+    ** buffer shared by every caller in the process. treetop is
+    ** single-threaded and calls it from one place, so the shared buffer
+    ** is not a live defect here - but "still correct as long as nobody
+    ** adds a thread" is a worse property than "correct", and the _s form
+    ** costs one local. Same reason as json_emit().
+    */
     now = time(NULL);
-    tmv = localtime(&now);
-    if (tmv != NULL)
-        swprintf(clockbuf, 16, L"  %02d:%02d:%02d", tmv->tm_hour,
-                tmv->tm_min, tmv->tm_sec);
+    if (localtime_s(&tmv, &now) == 0)
+        swprintf(clockbuf, 16, L"  %02d:%02d:%02d", tmv.tm_hour,
+                tmv.tm_min, tmv.tm_sec);
     else
         wcscpy(clockbuf, L"  --:--:--");
     len = (int)wcslen(clockbuf);
